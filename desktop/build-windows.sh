@@ -93,33 +93,82 @@ REQUIREMENTS:
   - Browser (Edge, Chrome, Firefox)
 README
 
-# 5. Create NSIS installer script
+# 5. Code signing (optional)
+if [ -n "$SIGNTOOL_PATH" ]; then
+  echo "🔐 Signing executable..."
+  "$SIGNTOOL_PATH" sign /f "$SIGN_CERT" /p "$SIGN_PASS" "$DIST/pd-eff.exe" 2>&1
+  echo "   Signed: pd-eff.exe"
+elif command -v osslsigncode &>/dev/null; then
+  echo "🔐 Signing with osslsigncode..."
+  osslsigncode sign -certs "$SIGN_CERT" -pass "$SIGN_PASS" -in "$DIST/pd-eff.exe" -out "$DIST/pd-eff-signed.exe"
+  mv "$DIST/pd-eff-signed.exe" "$DIST/pd-eff.exe" 2>/dev/null
+  echo "   Signed: pd-eff.exe"
+else
+  echo "⚠️  No code signing tool found. Skipping signing."
+  echo "   To sign, set SIGNTOOL_PATH or install osslsigncode."
+fi
+
+# 6. Create NSIS installer script
 cat > "$DIST/installer.nsi" << 'NSIS'
+!include "MUI2.nsh"
+
 !define APPNAME "pd-eff"
 !define VERSION "1.0.0"
 !define PUBLISHER "pd-eff"
+!define DESCRIPTION "Offline PDF Digital Signing"
 
-Name "${APPNAME}"
+Name "${APPNAME} v${VERSION}"
 OutFile "pd-eff-setup.exe"
 InstallDir $PROGRAMFILES\${APPNAME}
 RequestExecutionLevel admin
 
-Page directory
-Page instfiles
+# Modern UI
+!insertmacro MUI_PAGE_WELCOME
+!insertmacro MUI_PAGE_LICENSE "LICENSE.txt"
+!insertmacro MUI_PAGE_DIRECTORY
+!insertmacro MUI_PAGE_INSTFILES
+!insertmacro MUI_PAGE_FINISH
+
+!insertmacro MUI_UNPAGE_CONFIRM
+!insertmacro MUI_UNPAGE_INSTFILES
+
+!insertmacro MUI_LANGUAGE "English"
+
+# Version info
+VIProductVersion "${VERSION}.0"
+VIAddVersionKey "ProductName" "${APPNAME}"
+VIAddVersionKey "FileVersion" "${VERSION}"
+VIAddVersionKey "FileDescription" "${DESCRIPTION}"
 
 Section "Install"
   SetOutPath $INSTDIR
   File /r "dist\pd-eff-windows\*.*"
-  CreateShortCut "$DESKTOP\${APPNAME}.lnk" "$INSTDIR\pd-eff.bat"
+  
+  # Start Menu shortcuts
+  CreateDirectory "$SMPROGRAMS\${APPNAME}"
   CreateShortCut "$SMPROGRAMS\${APPNAME}\${APPNAME}.lnk" "$INSTDIR\pd-eff.bat"
+  CreateShortCut "$SMPROGRAMS\${APPNAME}\Uninstall.lnk" "$INSTDIR\uninstall.exe"
+  
+  # Desktop shortcut
+  CreateShortCut "$DESKTOP\${APPNAME}.lnk" "$INSTDIR\pd-eff.bat"
+  
+  # Uninstaller
   WriteUninstaller "$INSTDIR\uninstall.exe"
+  
+  # Add to Programs and Features
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "DisplayName" "${APPNAME}"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "UninstallString" "$INSTDIR\uninstall.exe"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "DisplayVersion" "${VERSION}"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "Publisher" "${PUBLISHER}"
 SectionEnd
 
 Section "Uninstall"
   Delete "$DESKTOP\${APPNAME}.lnk"
   Delete "$SMPROGRAMS\${APPNAME}\${APPNAME}.lnk"
-  RMDir /r "$INSTDIR"
+  Delete "$SMPROGRAMS\${APPNAME}\Uninstall.lnk"
   RMDir "$SMPROGRAMS\${APPNAME}"
+  RMDir /r "$INSTDIR"
+  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}"
 SectionEnd
 NSIS
 
