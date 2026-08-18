@@ -158,18 +158,24 @@ jobs:
         shell: cmd
 
       - name: Package Windows build
+        shell: bash
         run: |
           mkdir -p desktop/dist/pd-eff-windows
           cp desktop/dist/windows/pd-eff.exe desktop/dist/pd-eff-windows/
           cp -r backend/pdf_signer desktop/dist/pd-eff-windows/
-          mkdir -p desktop/dist/pd-eff-windows/data/uploads,desktop/dist/pd-eff-windows/data/signed,desktop/dist/pd-eff-windows/data/certs
+          mkdir -p desktop/dist/pd-eff-windows/data/uploads
+          mkdir -p desktop/dist/pd-eff-windows/data/signed
+          mkdir -p desktop/dist/pd-eff-windows/data/certs
 
-          echo '@echo off' > desktop/dist/pd-eff-windows/pd-eff.bat
-          echo 'cd /d "%~dp0"' >> desktop/dist/pd-eff-windows/pd-eff.bat
-          echo 'set PORT=8765' >> desktop/dist/pd-eff-windows/pd-eff.bat
-          echo 'start "" pd-eff.exe' >> desktop/dist/pd-eff-windows/pd-eff.bat
-          echo 'timeout /t 3 /nobreak ^>nul' >> desktop/dist/pd-eff-windows/pd-eff.bat
-          echo 'start http://localhost:8765' >> desktop/dist/pd-eff-windows/pd-eff.bat
+          cat > desktop/dist/pd-eff-windows/pd-eff.bat << 'BATCH'
+          @echo off
+          cd /d "%~dp0"
+          set PORT=8765
+          echo 🔐 pd-eff starting on http://localhost:8765
+          start "" pd-eff.exe
+          timeout /t 3 /nobreak >nul
+          start http://localhost:8765
+          BATCH
 
       - name: Upload Windows build
         uses: actions/upload-artifact@v4
