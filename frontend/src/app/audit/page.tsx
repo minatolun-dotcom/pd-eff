@@ -35,8 +35,8 @@ export default function AuditPage() {
   const [filter, setFilter] = useState<"all" | "signing" | "verification">("all");
 
   useEffect(() => {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
     Promise.all([
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
       fetch(`${apiUrl}/api/signing-records`).then(r => r.json()),
       fetch(`${apiUrl}/api/verification-records`).then(r => r.json()),
     ])

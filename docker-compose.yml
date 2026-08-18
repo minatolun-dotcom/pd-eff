@@ -1,0 +1,47 @@
+# pd-eff — Docker Compose
+# One command to run the full app
+
+version: '3.8'
+
+services:
+  pd-eff:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pd-eff
+    ports:
+      - "8765:8765"
+    volumes:
+      # Persist data across restarts
+      - pd-eff-data:/app/data
+    environment:
+      - PORT=8765
+      - HOST=0.0.0.0
+      - DATA_DIR=/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8765/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # Optional: Nginx reverse proxy with HTTPS
+  nginx:
+    image: nginx:alpine
+    container_name: pd-eff-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certs:/etc/nginx/certs:ro  # Put your SSL certs here
+    depends_on:
+      pd-eff:
+        condition: service_healthy
+    profiles:
+      - with-https  # Only runs with: docker compose --profile with-https up
+
+volumes:
+  pd-eff-data:
+    driver: local

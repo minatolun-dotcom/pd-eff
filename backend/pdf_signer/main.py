@@ -45,20 +45,56 @@ app.add_middleware(
 @app.on_event("startup")
 def startup():
     init_db()
-    
-    # In desktop mode, serve frontend static files
-    frontend_dir = Path(__file__).parent.parent.parent / "frontend" / ".next"
-    if frontend_dir.exists():
-        # Serve static assets
-        static_dir = frontend_dir / "static"
+
+    # Serve frontend (standalone Next.js build)
+    # Docker: FRONTEND_DIR=/app/.next-standalone
+    # Desktop: frontend/.next/standalone/
+    frontend_env = os.environ.get("FRONTEND_DIR", "")
+    possible_dirs = [
+        Path(frontend_env) if frontend_env else None,
+        Path(__file__).parent.parent / ".next-standalone",
+        Path(__file__).parent.parent.parent / "frontend" / ".next" / "standalone",
+    ]
+
+    standalone_dir = None
+    for d in possible_dirs:
+        if d and d.exists() and (d / "server").exists():
+            standalone_dir = d
+            break
+
+    if standalone_dir:
+        # Serve _next/static assets
+        static_dir = standalone_dir / ".next" / "static"
         if static_dir.exists():
-            app.mount("/_next/static", StaticFiles(directory=str(static_dir)), name="static")
-    
-    # Also check for standalone build
-    standalone_dir = Path(__file__).parent.parent.parent / "frontend" / ".next" / "standalone"
-    if standalone_dir.exists():
-        app.mount("/_next", StaticFiles(directory=str(standalone_dir / "_next")), name="next")
-        app.mount("/static", StaticFiles(directory=str(standalone_dir / "static")), name="static_files")
+            app.mount("/_next/static", StaticFiles(directory=str(static_dir)), name="next-static")
+
+        # Serve public assets
+        public_dir = standalone_dir / "public"
+        if public_dir.exists():
+            app.mount("/public", StaticFiles(directory=str(public_dir)), name="public")
+
+        # Catch-all: serve Next.js pages for non-API routes
+        @app.get("/{full_path:path}")
+        async def serve_frontend(full_path: str):
+            # Skip API routes
+            if full_path.startswith("api/"):
+                raise HTTPException(404, "Not found")
+
+            # Try to find the page in standalone
+            server_dir = standalone_dir / "server" / "app"
+            page_file = server_dir / f"{full_path}" / "page.js"
+            root_file = server_dir / "page.js"
+
+            # Serve index.html from Next.js build
+            index_file = standalone_dir / "index.html"
+            if index_file.exists():
+                return FileResponse(str(index_file), media_type="text/html")
+
+            # Fallback to root page
+            if root_file.exists():
+                return FileResponse(str(root_file), media_type="text/html")
+
+            raise HTTPException(404, "Page not found")
 
 
 # ─── Health ───────────────────────────────────────────────────────
@@ -404,9 +440,10 @@ async def encrypt_pdf_endpoint(
     except Exception as e:
         raise HTTPException(500, f"Encryption failed: {str(e)}")
 
+    encrypted_name = Path(result["output_path"]).name
     return {
-        "encrypted_filename": Path(result["output_path"]).name,
-        "download_url": f"/api/download-file/{Path(result["output_path"]).name}",
+        "encrypted_filename": encrypted_name,
+        "download_url": f"/api/download-file/{encrypted_name}",
         **{k: v for k, v in result.items() if k != "output_path"},
     }
 
