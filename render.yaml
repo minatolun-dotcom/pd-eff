@@ -1,0 +1,26 @@
+services:
+  # Backend API (FastAPI)
+  - type: web
+    name: pd-eff-api
+    runtime: python
+    plan: free
+    buildCommand: cd backend && pip install -r requirements.txt && pip install pikepdf nest-asyncio
+    startCommand: cd backend && python run.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.0"
+      - key: DATABASE_URL
+        sync: false
+
+  # Frontend (Next.js)
+  - type: web
+    name: pd-eff-frontend
+    runtime: node
+    plan: free
+    buildCommand: cd frontend && npm install && npm run build
+    startCommand: cd frontend && npm start
+    envVars:
+      - key: NODE_VERSION
+        value: "20.0.0"
+      - key: NEXT_PUBLIC_API_URL
+        value: "https://pd-eff-api.onrender.com"
