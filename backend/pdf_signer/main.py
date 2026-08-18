@@ -7,9 +7,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException
+from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
 from .database import init_db, get_db, Certificate, SigningRecord, VerificationRecord
@@ -44,6 +45,20 @@ app.add_middleware(
 @app.on_event("startup")
 def startup():
     init_db()
+    
+    # In desktop mode, serve frontend static files
+    frontend_dir = Path(__file__).parent.parent.parent / "frontend" / ".next"
+    if frontend_dir.exists():
+        # Serve static assets
+        static_dir = frontend_dir / "static"
+        if static_dir.exists():
+            app.mount("/_next/static", StaticFiles(directory=str(static_dir)), name="static")
+    
+    # Also check for standalone build
+    standalone_dir = Path(__file__).parent.parent.parent / "frontend" / ".next" / "standalone"
+    if standalone_dir.exists():
+        app.mount("/_next", StaticFiles(directory=str(standalone_dir / "_next")), name="next")
+        app.mount("/static", StaticFiles(directory=str(standalone_dir / "static")), name="static_files")
 
 
 # ─── Health ───────────────────────────────────────────────────────

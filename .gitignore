@@ -26,3 +26,4 @@ backend/data/certs/*
 .DS_Store
 Thumbs.db
 credentials
+desktop/dist/
