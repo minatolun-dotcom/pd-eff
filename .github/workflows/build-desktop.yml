@@ -1,0 +1,178 @@
+name: Build Desktop Apps
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Python dependencies
+        run: |
+          cd backend
+          python -m venv venv
+          source venv/bin/activate
+          pip install -r requirements.txt pikepdf nest-asyncio pyinstaller
+
+      - name: Install Node dependencies
+        run: |
+          cd frontend
+          npm install --legacy-peer-deps
+
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm run build
+
+      - name: Build Linux executable
+        run: |
+          cd backend
+          source venv/bin/activate
+          cat > run_desktop.py << 'EOF'
+          import os, sys, uvicorn
+          port = int(os.environ.get('PORT', 8765))
+          print(f"Starting pd-eff on port {port}...")
+          uvicorn.run("pdf_signer.main:app", host="0.0.0.0", port=port)
+          EOF
+          pyinstaller --onefile --name pd-eff \
+            --distpath ../desktop/dist/linux \
+            --workpath /tmp/pyinstaller \
+            --clean \
+            --add-data "pdf_signer:pdf_signer" \
+            --hidden-import pdf_signer --hidden-import pdf_signer.main \
+            --hidden-import pdf_signer.database --hidden-import pdf_signer.signing_service \
+            --hidden-import pdf_signer.verification_service --hidden-import pdf_signer.cert_utils \
+            --hidden-import pdf_signer.config --hidden-import pdf_signer.pkcs11_service \
+            --hidden-import uvicorn --hidden-import uvicorn.logging \
+            --hidden-import uvicorn.loops --hidden-import uvicorn.loops.auto \
+            --hidden-import uvicorn.protocols --hidden-import uvicorn.protocols.http \
+            --hidden-import uvicorn.protocols.http.auto \
+            --hidden-import uvicorn.protocols.websockets --hidden-import uvicorn.protocols.websockets.auto \
+            --hidden-import uvicorn.lifespan --hidden-import uvicorn.lifespan.on \
+            run_desktop.py
+
+      - name: Package Linux build
+        run: |
+          mkdir -p desktop/dist/pd-eff-linux-x64
+          cp desktop/dist/linux/pd-eff desktop/dist/pd-eff-linux-x64/
+          chmod +x desktop/dist/pd-eff-linux-x64/pd-eff
+          cp -r backend/pdf_signer desktop/dist/pd-eff-linux-x64/
+          mkdir -p desktop/dist/pd-eff-linux-x64/data/{uploads,signed,certs}
+
+          cat > desktop/dist/pd-eff-linux-x64/pd-eff-wrapper << 'WRAPPER'
+          #!/bin/bash
+          cd "$(dirname "$0")"
+          export PORT=8765
+          echo "🔐 pd-eff starting on http://localhost:8765"
+          ./pd-eff &
+          PID=$!
+          sleep 2
+          xdg-open http://localhost:8765 2>/dev/null
+          trap "kill $PID 2>/dev/null" EXIT
+          wait
+          WRAPPER
+          chmod +x desktop/dist/pd-eff-linux-x64/pd-eff-wrapper
+          mv desktop/dist/pd-eff-linux-x64/pd-eff desktop/dist/pd-eff-linux-x64/pd-eff-server
+          mv desktop/dist/pd-eff-linux-x64/pd-eff-wrapper desktop/dist/pd-eff-linux-x64/pd-eff
+
+          cd desktop/dist
+          tar -czf pd-eff-linux-x64.tar.gz pd-eff-linux-x64/
+
+      - name: Upload Linux build
+        uses: actions/upload-artifact@v4
+        with:
+          name: pd-eff-linux-x64
+          path: desktop/dist/pd-eff-linux-x64.tar.gz
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Python dependencies
+        run: |
+          cd backend
+          python -m venv venv
+          .\venv\Scripts\activate
+          pip install -r requirements.txt pikepdf nest-asyncio pyinstaller
+
+      - name: Install Node dependencies
+        run: |
+          cd frontend
+          npm install --legacy-peer-deps
+
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm run build
+
+      - name: Build Windows executable
+        run: |
+          cd backend
+          .\venv\Scripts\activate
+          echo "import os, sys, uvicorn" > run_desktop.py
+          echo "port = int(os.environ.get('PORT', 8765))" >> run_desktop.py
+          echo "print(f'Starting pd-eff on port {port}...')" >> run_desktop.py
+          echo "uvicorn.run('pdf_signer.main:app', host='0.0.0.0', port=port)" >> run_desktop.py
+          pyinstaller --onefile --name pd-eff.exe ^
+            --distpath ..\desktop\dist\windows ^
+            --workpath C:\tmp\pyinstaller ^
+            --clean ^
+            --add-data "pdf_signer;pdf_signer" ^
+            --hidden-import pdf_signer --hidden-import pdf_signer.main ^
+            --hidden-import pdf_signer.database --hidden-import pdf_signer.signing_service ^
+            --hidden-import pdf_signer.verification_service --hidden-import pdf_signer.cert_utils ^
+            --hidden-import pdf_signer.config --hidden-import pdf_signer.pkcs11_service ^
+            --hidden-import uvicorn --hidden-import uvicorn.logging ^
+            --hidden-import uvicorn.loops --hidden-import uvicorn.loops.auto ^
+            --hidden-import uvicorn.protocols --hidden-import uvicorn.protocols.http ^
+            --hidden-import uvicorn.protocols.http.auto ^
+            --hidden-import uvicorn.protocols.websockets --hidden-import uvicorn.protocols.websockets.auto ^
+            --hidden-import uvicorn.lifespan --hidden-import uvicorn.lifespan.on ^
+            run_desktop.py
+        shell: cmd
+
+      - name: Package Windows build
+        run: |
+          mkdir -p desktop/dist/pd-eff-windows
+          cp desktop/dist/windows/pd-eff.exe desktop/dist/pd-eff-windows/
+          cp -r backend/pdf_signer desktop/dist/pd-eff-windows/
+          mkdir -p desktop/dist/pd-eff-windows/data/uploads,desktop/dist/pd-eff-windows/data/signed,desktop/dist/pd-eff-windows/data/certs
+
+          echo '@echo off' > desktop/dist/pd-eff-windows/pd-eff.bat
+          echo 'cd /d "%~dp0"' >> desktop/dist/pd-eff-windows/pd-eff.bat
+          echo 'set PORT=8765' >> desktop/dist/pd-eff-windows/pd-eff.bat
+          echo 'start "" pd-eff.exe' >> desktop/dist/pd-eff-windows/pd-eff.bat
+          echo 'timeout /t 3 /nobreak ^>nul' >> desktop/dist/pd-eff-windows/pd-eff.bat
+          echo 'start http://localhost:8765' >> desktop/dist/pd-eff-windows/pd-eff.bat
+
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: pd-eff-windows
+          path: desktop/dist/pd-eff-windows/

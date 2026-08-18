@@ -2,6 +2,7 @@ const { app, BrowserWindow, dialog } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 const kill = require('tree-kill');
+const { checkForUpdates, startPeriodicCheck } = require('./updater');
 
 let mainWindow;
 let backendProcess;
@@ -85,6 +86,9 @@ app.whenReady().then(async () => {
   try {
     await startBackend();
     createWindow();
+    
+    // Start auto-update checker
+    startPeriodicCheck(mainWindow);
   } catch (err) {
     dialog.showErrorBox('Error', `Failed to start: ${err.message}`);
     app.quit();
