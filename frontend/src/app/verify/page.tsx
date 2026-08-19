@@ -290,66 +290,88 @@ function TrustStoreSection() {
 
 function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos }: { result: VerificationResult; file: File | null; hasUntrusted: boolean | undefined; stampPos: {x:number;y:number;w:number;h:number}|null; setStampPos: (p:{x:number;y:number;w:number;h:number})=>void }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [containerSize, setContainerSize] = useState({ w: 0, h: 0 });
-  const pageDim = result.page_dimensions;
-
-  // Stamp state comes from parent
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [rendered, setRendered] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [resizing, setResizing] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [canvasScale, setCanvasScale] = useState(1);
+  const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 });
+  const pageDim = result.page_dimensions;
 
+  // Render PDF with pdfjs-dist
   useEffect(() => {
-    if (!containerRef.current) return;
-    const obs = new ResizeObserver((entries) => {
-      const { width, height } = entries[0].contentRect;
-      setContainerSize({ w: width, h: height });
-    });
-    obs.observe(containerRef.current);
-    return () => obs.disconnect();
-  }, []);
+    if (!file || !canvasRef.current || !containerRef.current) return;
+    let cancelled = false;
 
-  // Calculate scale
-  let scale = 1;
-  let offsetX = 0;
-  let offsetY = 0;
-  if (pageDim && containerSize.w > 0 && containerSize.h > 0) {
-    const scaleX = containerSize.w / pageDim.width;
-    const scaleY = containerSize.h / pageDim.height;
-    scale = Math.min(scaleX, scaleY);
-    const renderedW = pageDim.width * scale;
-    const renderedH = pageDim.height * scale;
-    offsetX = (containerSize.w - renderedW) / 2;
-    offsetY = (containerSize.h - renderedH) / 2;
-  }
+    const renderPdf = async () => {
+      const pdfjsLib = await import("pdfjs-dist");
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
-  // Initialize stamp position at first signature's widget area
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      const page = await pdf.getPage(1);
+
+      const canvas = canvasRef.current!;
+      const ctx = canvas.getContext("2d")!;
+      const container = containerRef.current!;
+
+      // Fit to container
+      const containerW = container.clientWidth;
+      const containerH = container.clientHeight;
+      const viewport = page.getViewport({ scale: 1 });
+      const scaleX = containerW / viewport.width;
+      const scaleY = containerH / viewport.height;
+      const fitScale = Math.min(scaleX, scaleY);
+
+      const scaledViewport = page.getViewport({ scale: fitScale });
+      canvas.width = scaledViewport.width;
+      canvas.height = scaledViewport.height;
+
+      if (!cancelled) {
+        await page.render({ canvasContext: ctx, viewport: scaledViewport }).promise;
+        setCanvasScale(fitScale);
+        setCanvasOffset({ x: (containerW - scaledViewport.width) / 2, y: (containerH - scaledViewport.height) / 2 });
+        setRendered(true);
+      }
+    };
+
+    renderPdf().catch(console.error);
+    return () => { cancelled = true; };
+  }, [file]);
+
+  // Initialize stamp position
   useEffect(() => {
     if (!stampPos && result.signatures.length > 0 && pageDim) {
       const sig = result.signatures[0];
       const pos = sig.details?.position;
       if (pos) {
-        const sx = Math.max(10, pos.x1 - 220);
-        const sy = pos.y1 - 10;
-        setStampPos({ x: sx, y: sy, w: 210, h: 80 });
+        setStampPos({ x: Math.max(10, pos.x1 - 220), y: pos.y1 - 10, w: 210, h: 80 });
       } else {
         setStampPos({ x: pageDim.width - 230, y: pageDim.height - 120, w: 210, h: 80 });
       }
     }
   }, [result, pageDim]);
 
-  // Convert PDF coords to screen coords
-  const pdfToScreen = (px: number, py: number) => ({
-    sx: offsetX + px * scale,
-    sy: offsetY + (pageDim!.height - py) * scale,
-  });
+  // PDF coords → screen coords (on canvas)
+  const pdfToScreen = (px: number, py: number) => {
+    if (!pageDim) return { sx: 0, sy: 0 };
+    return {
+      sx: canvasOffset.x + px * canvasScale,
+      sy: canvasOffset.y + (pageDim.height - py) * canvasScale,
+    };
+  };
 
-  // Convert screen coords to PDF coords
-  const screenToPdf = (sx: number, sy: number) => ({
-    px: (sx - offsetX) / scale,
-    py: pageDim!.height - (sy - offsetY) / scale,
-  });
+  // Screen coords → PDF coords
+  const screenToPdf = (sx: number, sy: number) => {
+    if (!pageDim) return { px: 0, py: 0 };
+    return {
+      px: (sx - canvasOffset.x) / canvasScale,
+      py: pageDim.height - (sy - canvasOffset.y) / canvasScale,
+    };
+  };
 
-  // Mouse handlers for dragging
+  // Mouse handlers
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -361,27 +383,29 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
       const { sx, sy } = pdfToScreen(stampPos.x, stampPos.y);
       setDragOffset({ x: mouseX - sx, y: mouseY - sy });
     }
-  }, [stampPos, offsetX, offsetY, scale, pageDim]);
+  }, [stampPos, canvasScale, canvasOffset, pageDim]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!dragging || !stampPos || !pageDim) return;
+    if ((!dragging && !resizing) || !stampPos || !pageDim) return;
     const rect = containerRef.current!.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
-    const { px, py } = screenToPdf(mouseX - dragOffset.x, mouseY - dragOffset.y);
-    setStampPos({ ...stampPos, x: Math.max(0, Math.min(px, pageDim.width - stampPos.w)), y: Math.max(0, Math.min(py, pageDim.height - stampPos.h)) });
-  }, [dragging, dragOffset, stampPos, offsetX, offsetY, scale, pageDim]);
+
+    if (dragging) {
+      const { px, py } = screenToPdf(mouseX - dragOffset.x, mouseY - dragOffset.y);
+      setStampPos({ ...stampPos, x: Math.max(0, Math.min(px, pageDim.width - stampPos.w)), y: Math.max(0, Math.min(py, pageDim.height - stampPos.h)) });
+    }
+    if (resizing) {
+      const { px, py } = screenToPdf(mouseX, mouseY);
+      const newW = Math.max(120, Math.min(px - stampPos.x, pageDim.width - stampPos.x));
+      const newH = Math.max(50, Math.min(py - stampPos.y, pageDim.height - stampPos.y));
+      setStampPos({ ...stampPos, w: newW, h: newH });
+    }
+  }, [dragging, resizing, dragOffset, stampPos, canvasScale, canvasOffset, pageDim]);
 
   const handleMouseUp = useCallback(() => {
     setDragging(false);
     setResizing(false);
-  }, []);
-
-  // Resize handler
-  const handleResizeStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setResizing(true);
   }, []);
 
   useEffect(() => {
@@ -396,21 +420,22 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
   }, [dragging, resizing, handleMouseMove, handleMouseUp]);
 
   // Screen position of stamp
-  const screenStamp = stampPos && pageDim
-    ? { ...pdfToScreen(stampPos.x, stampPos.y), w: stampPos.w * scale, h: stampPos.h * scale }
+  const screenStamp = stampPos && pageDim && rendered
+    ? { ...pdfToScreen(stampPos.x, stampPos.y), w: stampPos.w * canvasScale, h: stampPos.h * canvasScale }
     : null;
 
   return (
     <div
       ref={containerRef}
-      className="flex-1 relative bg-gray-100 dark:bg-gray-900 overflow-hidden"
+      className="flex-1 relative bg-gray-200 dark:bg-gray-800 overflow-hidden"
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
     >
-      <iframe
-        src={file ? URL.createObjectURL(file) : ""}
-        className="w-full h-full border-0 pointer-events-none"
-        title="PDF Preview"
+      {/* PDF rendered on canvas */}
+      <canvas
+        ref={canvasRef}
+        className="absolute"
+        style={{ left: canvasOffset.x, top: canvasOffset.y }}
       />
 
       {/* Draggable stamp overlay */}
@@ -426,8 +451,7 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
           }}
           onMouseDown={handleMouseDown}
         >
-          {/* Stamp content — matches the PDF export exactly */}
-          <div className="w-full h-full bg-white/95 backdrop-blur-sm border border-gray-300 rounded shadow-lg p-2 flex flex-col justify-between">
+          <div className="w-full h-full bg-white border border-gray-200 shadow-lg p-2 flex flex-col justify-between">
             <div>
               <p className="text-[11px] font-bold text-gray-900 leading-tight">Signature valid</p>
               <p className="text-[9px] text-gray-600 leading-tight mt-0.5">
@@ -449,18 +473,13 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
                 </p>
               )}
             </div>
-            {/* Green checkmark */}
             <div className="absolute right-2 top-1/2 -translate-y-1/2">
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M4 12.5l5 5L20 6" />
               </svg>
             </div>
           </div>
-          {/* Resize handle */}
-          <div
-            className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize"
-            onMouseDown={handleResizeStart}
-          >
+          <div className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setResizing(true); }}>
             <svg width="12" height="12" viewBox="0 0 12 12" className="absolute bottom-0.5 right-0.5">
               <path d="M10 2L2 10M10 6L6 10M10 10L10 10" stroke="#999" strokeWidth="1.5" />
             </svg>
@@ -468,25 +487,22 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
         </div>
       )}
 
-      {/* Overall status badge */}
-      <div className="absolute top-4 right-4 animate-bounceIn z-40">
-        <div className={`flex flex-col items-center gap-1 px-3 py-2 rounded-xl shadow-xl backdrop-blur-sm ${
+      {/* Status badge */}
+      <div className="absolute top-4 right-4 z-40">
+        <div className={`flex flex-col items-center gap-1 px-3 py-2 rounded-xl shadow-xl ${
           result.is_valid ? "bg-green-500/90 text-white"
             : hasUntrusted ? "bg-amber-500/90 text-white"
             : "bg-red-500/90 text-white"
         }`}>
-          <div className="text-2xl font-bold">
-            {result.is_valid ? "✓" : hasUntrusted ? "⚠" : "✗"}
-          </div>
+          <div className="text-2xl font-bold">{result.is_valid ? "✓" : hasUntrusted ? "⚠" : "✗"}</div>
           <div className="text-[10px] font-bold tracking-wide">
             {result.is_valid ? "SIGNATURE VALID" : hasUntrusted ? "UNTRUSTED" : "INVALID"}
           </div>
         </div>
       </div>
 
-      {/* Instructions */}
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40">
-        <div className="bg-black/70 text-white text-[10px] px-3 py-1.5 rounded-full backdrop-blur-sm">
+        <div className="bg-black/70 text-white text-[10px] px-3 py-1.5 rounded-full">
           Drag stamp to reposition · Drag corner to resize
         </div>
       </div>
