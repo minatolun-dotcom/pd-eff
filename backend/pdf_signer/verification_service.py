@@ -1,12 +1,12 @@
 """PDF signature verification service using PyHanko.
 
 Supports:
-- Standard signature validation
-- adbe.pkcs7.sha1 SubFilter (older Adobe format)
+- Standard signature validation (pkcs7.detached, pkcs7.sha256)
+- adbe.pkcs7.sha1 SubFilter (older Adobe format) with manual verification
 - Custom trust store validation
 - Full certificate chain extraction
 """
-import json
+import hashlib
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
@@ -63,10 +63,8 @@ def verify_pdf(pdf_path: str, trust_roots: list = None, trusted_pems: list = Non
                 sig_result = _validate_single_signature(reader, sig_obj, vc)
                 results["signatures"].append(sig_result)
 
-                # For trust status: if intact but untrusted, that's a specific state
                 if not sig_result["intact"]:
                     all_valid = False
-                # If intact but trust_status is not VALID, mark as partially valid
                 elif sig_result.get("trust_status") not in ("VALID", ""):
                     all_valid = False
 
@@ -99,8 +97,12 @@ def _validate_single_signature(reader, sig_obj, vc) -> dict:
         "certificates": [],
     }
 
+    # ── Handle pkcs7.sha1 with custom verification ──────────────────────
+    if "pkcs7.sha1" in sub_filter.lower():
+        return _verify_pkcs7_sha1(reader, sig_obj, sig_info, vc)
+
+    # ── Standard PyHanko validation for pkcs7.detached / pkcs7.sha256 ──
     try:
-        from pyhanko.sign.validation.settings import KeyUsageConstraints
         import concurrent.futures
 
         def _validate():
@@ -159,21 +161,197 @@ def _validate_single_signature(reader, sig_obj, vc) -> dict:
     except Exception as e:
         err_str = str(e)
         sig_info["errors"].append(err_str)
+        sig_info["trust_status"] = "ERROR"
+        sig_info["certificates"] = _extract_certificates_from_sig(sig_obj)
+        try:
+            signer_info = _extract_signer_from_raw(sig_obj)
+            if signer_info:
+                sig_info["signer"] = signer_info
+        except Exception:
+            pass
 
-        # If the SubFilter is not recognized, try raw extraction
-        if "not a recognized SubFilter" in err_str or "pkcs7.sha1" in sub_filter.lower():
-            sig_info["trust_status"] = "UNTRUSTED (legacy format)"
-            sig_info["certificates"] = _extract_certificates_from_sig(sig_obj)
+    return sig_info
 
-            # Try to extract signer info from raw PKCS#7
-            try:
-                signer_info = _extract_signer_from_raw(sig_obj)
-                if signer_info:
-                    sig_info["signer"] = signer_info
-            except Exception:
-                pass
+
+def _verify_pkcs7_sha1(reader, sig_obj, sig_info, vc) -> dict:
+    """
+    Custom verification for /adbe.pkcs7.sha1 SubFilter.
+
+    This older Adobe format embeds a SHA-1 hash of the document bytes
+    inside the PKCS#7 SignedData structure. PyHanko doesn't support it,
+    so we manually:
+    1. Extract the PKCS#7 SignedData
+    2. Find the SHA-1 hash in the signed attributes
+    3. Compute SHA-1 of the PDF bytes that were signed
+    4. Compare to verify integrity
+    5. Verify the certificate chain
+    """
+    from asn1crypto import cms, x509 as asn1_x509
+
+    sig_dict = sig_obj.sig_object
+    sig_bytes = sig_dict.get("/Contents")
+    if not sig_bytes:
+        sig_info["errors"].append("No signature contents found")
+        return sig_info
+
+    try:
+        content_info = cms.ContentInfo.load(bytes(sig_bytes))
+        signed_data = content_info["content"]
+
+        if not isinstance(signed_data, cms.SignedData):
+            sig_info["errors"].append("Not a SignedData structure")
+            return sig_info
+
+        # ── Extract certificates ─────────────────────────────────────────
+        certs = []
+        signer_cert = None
+        for cert_choice in signed_data["certificates"]:
+            cert = cert_choice.chosen
+            if isinstance(cert, asn1_x509.Certificate):
+                certs.append(cert)
+                # The last cert is typically the signer
+                signer_cert = cert
+            elif isinstance(cert, bytes):
+                try:
+                    parsed = asn1_x509.Certificate.load(cert)
+                    certs.append(parsed)
+                    signer_cert = parsed
+                except Exception:
+                    pass
+
+        if signer_cert:
+            sig_info["signer"] = _extract_signer_info(signer_cert)
+
+        # Format certificates for the response
+        sig_info["certificates"] = [
+            {
+                "subject_cn": _get_asn1_attr(c.subject, "common_name"),
+                "subject_full": c.subject.human_friendly,
+                "issuer_cn": _get_asn1_attr(c.issuer, "common_name"),
+                "issuer_full": c.issuer.human_friendly,
+                "serial_number": str(c.serial_number),
+                "is_self_signed": c.issuer == c.subject,
+            }
+            for c in certs
+        ]
+
+        # ── Verify integrity via SHA-1 hash ──────────────────────────────
+        # Extract the signer info
+        signer_infos = signed_data["signer_infos"]
+        if not signer_infos:
+            sig_info["errors"].append("No signer info in PKCS#7")
+            return sig_info
+
+        signer_info_obj = signer_infos[0]
+        si_native = signer_info_obj.native
+
+        # Read the PDF bytes covered by ByteRange
+        byte_range = sig_dict.get("/ByteRange")
+        if byte_range is None:
+            sig_info["errors"].append("No ByteRange in signature")
+            return sig_info
+
+        br = [int(byte_range[i]) for i in range(len(byte_range))]
+        with open(reader.stream.name, "rb") as pdf_f:
+            pdf_f.seek(br[0])
+            data1 = pdf_f.read(br[1])
+            pdf_f.seek(br[2])
+            data2 = pdf_f.read(br[3])
+        signed_bytes = data1 + data2
+
+        # ── Verify signature integrity ───────────────────────────────────
+        # Case 1: signed_attrs present → verify via message-digest attribute
+        # Case 2: no signed_attrs → RSA directly signs SHA-1(ByteRange)
+        from cryptography.x509 import load_der_x509_certificate
+        from cryptography.hazmat.primitives.asymmetric import padding as asym_padding
+        from cryptography.hazmat.primitives import hashes as asym_hashes
+
+        # Get signer cert and signature
+        cert_der = signed_data["certificates"][-1].chosen.dump()
+        if not isinstance(cert_der, bytes):
+            cert_der = cert_der.dump()
+        pyca_cert = load_der_x509_certificate(cert_der)
+        signature = si_native["signature"]
+
+        signed_attrs = si_native.get("signed_attrs")
+        if signed_attrs:
+            # Case 1: Extract expected hash from signed attributes
+            expected_hash = None
+            for attr in signed_attrs:
+                attr_id = str(attr["type"])
+                if "1.2.840.113549.1.9.4" in attr_id:  # message-digest
+                    digest_values = attr["values"]
+                    if digest_values:
+                        expected_hash = bytes(digest_values[0])
+                        break
+
+            if expected_hash:
+                computed_hash = hashlib.sha1(signed_bytes).digest()
+                if computed_hash == expected_hash:
+                    sig_info["intact"] = True
+                    sig_info["valid"] = True
+                else:
+                    sig_info["errors"].append("SHA-1 hash mismatch")
         else:
-            sig_info["trust_status"] = "ERROR"
+            # Case 2: No signed attrs — RSA signature over SHA-1(ByteRange)
+            sha1_hash = hashlib.sha1(signed_bytes).digest()
+            try:
+                pyca_cert.public_key().verify(
+                    signature, sha1_hash,
+                    asym_padding.PKCS1v15(), asym_hashes.SHA1()
+                )
+                sig_info["intact"] = True
+                sig_info["valid"] = True
+                logger.info(f"pkcs7.sha1 RSA-SHA1 verified for {sig_info['field_name']}")
+            except Exception as verify_err:
+                sig_info["errors"].append(f"RSA verification failed: {verify_err}")
+
+        # ── Trust verification ───────────────────────────────────────────
+        if signer_cert is not None and vc:
+            try:
+                import concurrent.futures
+                from pyhanko_certvalidator import CertificateValidator
+
+                def _check_trust():
+                    validator = CertificateValidator(
+                        end_entity_cert=signer_cert,
+                        intermediate_certs=certs[:-1] if len(certs) > 1 else [],
+                        validation_context=vc,
+                    )
+                    validator.validate_usage(
+                        key_usage={"digital_signature", "non_repudiation"}
+                    )
+
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    pool.submit(_check_trust).result(timeout=10)
+                sig_info["trust_status"] = "VALID"
+            except Exception as trust_err:
+                sig_info["trust_status"] = f"UNTRUSTED ({str(trust_err)[:80]})"
+        elif signer_cert:
+            sig_info["trust_status"] = "UNTRUSTED (no trust store)"
+        else:
+            sig_info["trust_status"] = "UNKNOWN"
+
+        # Timestamps
+        sig_info["timestamps"] = {
+            "signing_time": _get_signing_time(sig_obj),
+        }
+
+        # Details
+        sig_info["details"] = {
+            "field_name": sig_info["field_name"],
+            "filter": _safe_get(sig_dict, "/Filter", "Adobe.PPKLite"),
+            "sub_filter": str(sig_dict.get("/SubFilter", "")),
+            "reason": _safe_get(sig_dict, "/Reason", ""),
+            "location": _safe_get(sig_dict, "/Location", ""),
+            "hash_algorithm": "SHA-1",
+            "verified_method": "manual SHA-1 hash comparison",
+        }
+
+    except Exception as e:
+        sig_info["errors"].append(f"pkcs7.sha1 verification error: {str(e)}")
+        sig_info["trust_status"] = "ERROR"
+        logger.error(f"pkcs7.sha1 verification failed: {e}", exc_info=True)
 
     return sig_info
 
@@ -216,19 +394,19 @@ def _extract_certificates_from_sig(sig_obj) -> list:
     """Extract all certificates embedded in the signature."""
     certs = []
     try:
+        from asn1crypto import cms, x509 as asn1_x509
+
         sig_dict = sig_obj.sig_object
         sig_bytes = sig_dict.get("/Contents")
         if not sig_bytes:
             return certs
 
-        from asn1crypto import cms, x509 as asn1_x509
         content_info = cms.ContentInfo.load(bytes(sig_bytes))
         content = content_info["content"]
 
         if isinstance(content, cms.SignedData):
             for cert_choice in content["certificates"]:
                 cert = cert_choice.chosen
-                # Handle both Certificate objects and raw bytes
                 if isinstance(cert, asn1_x509.Certificate):
                     certs.append({
                         "subject_cn": _get_asn1_attr(cert.subject, "common_name"),
@@ -239,10 +417,11 @@ def _extract_certificates_from_sig(sig_obj) -> list:
                         "is_self_signed": cert.issuer == cert.subject,
                     })
                 elif isinstance(cert, bytes):
-                    # Try to parse raw bytes as DER certificate
                     try:
-                        pyca_cert = pyca_x509.load_der_x509_certificate(cert)
+                        from cryptography import x509 as pyca_x509
                         from cryptography.hazmat.primitives import serialization
+
+                        pyca_cert = pyca_x509.load_der_x509_certificate(cert)
                         pem = pyca_cert.public_bytes(serialization.Encoding.PEM).decode()
                         subject = pyca_cert.subject
                         issuer = pyca_cert.issuer
@@ -279,6 +458,7 @@ def _extract_signer_from_raw(sig_obj) -> dict | None:
     """Extract signer info from raw PKCS#7 bytes."""
     try:
         from asn1crypto import cms, x509 as asn1_x509
+
         sig_dict = sig_obj.sig_object
         sig_bytes = sig_dict.get("/Contents")
         if not sig_bytes:
@@ -300,6 +480,7 @@ def _extract_signer_from_raw(sig_obj) -> dict | None:
                         "self_signed": signer_cert.issuer == signer_cert.subject,
                     }
                 elif isinstance(signer_cert, bytes):
+                    from cryptography import x509 as pyca_x509
                     pyca_cert = pyca_x509.load_der_x509_certificate(signer_cert)
                     cn = ""
                     org = ""
@@ -332,7 +513,6 @@ def _build_vc_from_pems(pem_list: list[str]) -> ValidationContext:
         try:
             from asn1crypto import pem as asn1_pem, x509 as asn1_x509
             _, _, der_bytes = asn1_pem.unarmor(pem_str.encode("ascii"))
-            # pyhanko_certvalidator expects asn1crypto Certificate objects
             cert = asn1_x509.Certificate.load(der_bytes)
             trust_roots.append(cert)
         except Exception as e:
