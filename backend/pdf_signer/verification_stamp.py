@@ -1,11 +1,11 @@
 """Verification stamp service — Acrobat-style clean verification stamps.
 
 Matches Adobe Acrobat's verification appearance:
-- White background
+- Black text, no border
 - "Signature valid" header
 - Signer name, date, reason, location in small text
-- Green checkmark on the right
-- Positioned exactly at the signature widget location
+- Large green checkmark on the right
+- Positioned at signature area, avoiding overlap with existing text
 """
 import re
 import uuid
@@ -35,8 +35,12 @@ def stamp_verification_result(pdf_path: str, verification_result: dict, page: in
         # ── Replace widget annotation appearances ────────────────────
         _replace_widgets(pdf, page_obj, signatures)
 
+        # ── Find existing text blocks to avoid overlap ───────────────
+        text_blocks = _find_text_blocks(page_obj, page_width, page_height)
+        image_blocks = _find_image_blocks(page_obj, page_width, page_height)
+
         # ── Draw stamps directly on content stream ──────────────────
-        _draw_stamps(pdf, page_obj, signatures, page_width, page_height)
+        _draw_stamps(pdf, page_obj, signatures, page_width, page_height, text_blocks, image_blocks)
 
         pdf.save(output_path)
         pdf.close()
@@ -48,8 +52,157 @@ def stamp_verification_result(pdf_path: str, verification_result: dict, page: in
     return output_path
 
 
+def _find_text_blocks(page_obj, page_width, page_height):
+    """Find all text block positions on the page."""
+    content = page_obj.get("/Contents")
+    if isinstance(content, pikepdf.Stream):
+        data = content.read_bytes().decode("latin-1", errors="replace")
+    elif isinstance(content, pikepdf.Array):
+        data = b""
+        for item in content:
+            if isinstance(item, pikepdf.Stream):
+                data += item.read_bytes() + b"\n"
+        data = data.decode("latin-1", errors="replace")
+    else:
+        return []
+
+    blocks = []
+
+    # Find Tm (text matrix) operations
+    for m in re.finditer(r'([\d\.\-]+)\s+([\d\.\-]+)\s+([\d\.\-]+)\s+([\d\.\-]+)\s+([\d\.\-]+)\s+([\d\.\-]+)\s+Tm', data):
+        tx, ty = float(m.group(5)), float(m.group(6))
+        # Get nearby text
+        after = data[m.end():m.end() + 300]
+        texts = re.findall(r'\(([^)]+)\)', after)
+        combined = " ".join(texts)
+        if combined.strip():
+            # Estimate block size based on text length
+            est_w = min(len(combined) * 5, 400)
+            blocks.append({
+                "x1": tx,
+                "y1": ty - 12,  # Approximate text height
+                "x2": tx + est_w,
+                "y2": ty + 5,
+                "text": combined[:50],
+            })
+
+    # Find Td (text position) operations
+    for m in re.finditer(r'([\d\.\-]+)\s+([\d\.\-]+)\s+Td', data):
+        tx, ty = float(m.group(1)), float(m.group(2))
+        after = data[m.end():m.end() + 300]
+        texts = re.findall(r'\(([^)]+)\)', after)
+        combined = " ".join(texts)
+        if combined.strip():
+            est_w = min(len(combined) * 5, 400)
+            blocks.append({
+                "x1": tx,
+                "y1": ty - 12,
+                "x2": tx + est_w,
+                "y2": ty + 5,
+                "text": combined[:50],
+            })
+
+    return blocks
+
+
+def _find_image_blocks(page_obj, page_width, page_height):
+    """Find all image positions on the page."""
+    content = page_obj.get("/Contents")
+    if isinstance(content, pikepdf.Stream):
+        data = content.read_bytes().decode("latin-1", errors="replace")
+    elif isinstance(content, pikepdf.Array):
+        data = b""
+        for item in content:
+            if isinstance(item, pikepdf.Stream):
+                data += item.read_bytes() + b"\n"
+        data = data.decode("latin-1", errors="replace")
+    else:
+        return []
+
+    blocks = []
+    for m in re.finditer(r'q\s*([\d\.\-e\s]+)\s+cm\s+/(\w+)\s+Do\s+Q', data):
+        nums = [float(x) for x in m.group(1).split()]
+        if len(nums) >= 6:
+            x, y = nums[4], nums[5]
+            w, h = abs(nums[0]), abs(nums[3])
+            blocks.append({
+                "x1": x,
+                "y1": y,
+                "x2": x + w,
+                "y2": y + h,
+                "name": m.group(2),
+            })
+
+    return blocks
+
+
+def _find_stamp_position(widget_rect, text_blocks, image_blocks, stamp_w, stamp_h, page_width, page_height):
+    """Find the best position for the stamp near the widget, avoiding overlap."""
+    if not widget_rect:
+        return page_width - stamp_w - 15, page_height - stamp_h - 15
+
+    wx, wy, ww, wh = widget_rect
+
+    # Generate candidate positions around the widget
+    candidates = [
+        # Left of widget
+        (wx - stamp_w - 5, wy - (stamp_h - wh) / 2),
+        # Right of widget
+        (wx + ww + 5, wy - (stamp_h - wh) / 2),
+        # Above widget
+        (wx - (stamp_w - ww) / 2, wy + wh + 5),
+        # Below widget
+        (wx - (stamp_w - ww) / 2, wy - stamp_h - 5),
+        # Above-left
+        (wx - stamp_w - 5, wy + wh + 5),
+        # Above-right
+        (wx + ww + 5, wy + wh + 5),
+        # Below-left
+        (wx - stamp_w - 5, wy - stamp_h - 5),
+        # Below-right
+        (wx + ww + 5, wy - stamp_h - 5),
+        # Directly on widget (last resort)
+        (wx, wy - (stamp_h - wh) / 2),
+        # Offset left from widget
+        (wx - stamp_w, wy),
+    ]
+
+    best_pos = None
+    best_overlap = float("inf")
+
+    for sx, sy in candidates:
+        # Clamp to page bounds
+        sx = max(5, min(sx, page_width - stamp_w - 5))
+        sy = max(5, min(sy, page_height - stamp_h - 5))
+
+        # Calculate overlap with text blocks
+        total_overlap = 0
+        stamp_rect = (sx, sy, sx + stamp_w, sy + stamp_h)
+
+        for block in text_blocks:
+            overlap = _rect_overlap(stamp_rect, (block["x1"], block["y1"], block["x2"], block["y2"]))
+            total_overlap += overlap
+
+        for block in image_blocks:
+            overlap = _rect_overlap(stamp_rect, (block["x1"], block["y1"], block["x2"], block["y2"]))
+            total_overlap += overlap
+
+        if total_overlap < best_overlap:
+            best_overlap = total_overlap
+            best_pos = (sx, sy)
+
+    return best_pos if best_pos else (wx, wy - stamp_h - 5)
+
+
+def _rect_overlap(r1, r2):
+    """Calculate overlap area between two rectangles."""
+    x_overlap = max(0, min(r1[2], r2[2]) - max(r1[0], r2[0]))
+    y_overlap = max(0, min(r1[3], r2[3]) - max(r1[1], r2[1]))
+    return x_overlap * y_overlap
+
+
 def _replace_widgets(pdf, page_obj, signatures):
-    """Replace widget annotation appearances with Acrobat-style verified stamps."""
+    """Replace widget annotation appearances."""
     annots = page_obj.get("/Annots")
     if not annots:
         return
@@ -74,16 +227,14 @@ def _replace_widgets(pdf, page_obj, signatures):
 
         time_str = _format_time(signing_time)
 
-        # Compact widget appearance
+        # Compact widget appearance — black text, no border, green check
         content = f"""q
-1 1 1 rg 0.7 0.7 0.7 RG 0.5 w
-0 0 {w} {h} re S
 0 0 0 rg /F1 8 Tf
 2 {h-10} Td ({safe(status_text)}) Tj
 0.13 0.55 0.13 rg
-20 {h/2-2} m 24 {h/2-6} l 32 {h/2+4} l S
+18 {h/2+2} m 22 {h/2-4} l 30 {h/2+6} l S
 0 0 0 rg /F1 6 Tf
-38 {h/2-2} Td ({safe(signer_name[:20])}) Tj
+34 {h/2+2} Td ({safe(signer_name[:20])}) Tj
 Q"""
 
         resources = pikepdf.Dictionary({
@@ -106,17 +257,8 @@ Q"""
         })
 
 
-def _draw_stamps(pdf, page_obj, signatures, page_width, page_height):
-    """Draw Acrobat-style verification stamps directly on the page content stream.
-
-    Style matches Adobe Acrobat:
-    - White/light gray background (subtle border)
-    - "Signature valid" header
-    - "Digitally signed by NAME"
-    - Date, Reason, Location in small gray text
-    - Green checkmark on the right
-    - Positioned at the widget annotation location
-    """
+def _draw_stamps(pdf, page_obj, signatures, page_width, page_height, text_blocks, image_blocks):
+    """Draw Acrobat-style verification stamps on the page content stream."""
     widget_rects = _get_widget_rects(page_obj)
 
     all_commands = []
@@ -125,66 +267,37 @@ def _draw_stamps(pdf, page_obj, signatures, page_width, page_height):
         pos = sig.get("details", {}).get("position")
         signer = sig.get("signer", {})
         signer_name = signer.get("common_name", "Unknown")
-        signer_org = signer.get("organization", "")
-        signer_title = signer.get("title", "")
         reason = sig.get("details", {}).get("reason", "")
         location = sig.get("details", {}).get("location", "")
         signing_time = sig.get("timestamps", {}).get("signing_time", "")
         status, status_text = _get_status(sig)
-
-        # Find widget rect for positioning
-        widget_rect = _find_widget_for_sig(pos, widget_rects) if pos else None
 
         def safe(s):
             return str(s).replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")[:40] if s else ""
 
         time_str = _format_time(signing_time)
 
-        # ── Position: expand from widget rect to show full stamp ─────
-        # Acrobat stamp is about 200×70 at the signature location
-        stamp_w, stamp_h = 200, 75
+        # Stamp dimensions — compact like Acrobat
+        stamp_w, stamp_h = 210, 80
 
-        if widget_rect:
-            # Place the stamp at the widget position, extending left
-            wx, wy, ww, wh = widget_rect
-            sx = wx - (stamp_w - ww)  # Extend left from widget
-            sy = wy - (stamp_h - wh) / 2  # Center vertically on widget
-            # Keep on page
-            sx = max(5, min(sx, page_width - stamp_w - 5))
-            sy = max(5, min(sy, page_height - stamp_h - 5))
-        elif pos:
-            sx = max(5, min(float(pos["x1"]), page_width - stamp_w - 5))
-            sy = float(pos["y1"]) - stamp_h - 5
-            if sy < 5:
-                sy = float(pos["y2"]) + 5
-        else:
-            sx = page_width - stamp_w - 15
-            sy = page_height - stamp_h - 15
+        # Find widget rect for positioning
+        widget_rect = _find_widget_for_sig(pos, widget_rects) if pos else None
 
-        # ── Acrobat-style stamp (white bg, small text, green check) ──
-        # Colors
-        text_color = "0 0 0"           # Black
-        gray_color = "0.4 0.4 0.4"     # Gray for details
-        green = "0.13 0.55 0.13"       # Dark green for checkmark
-        border_color = "0.75 0.75 0.75"  # Light gray border
+        # Smart positioning — avoid overlap with text/images
+        sx, sy = _find_stamp_position(widget_rect, text_blocks, image_blocks, stamp_w, stamp_h, page_width, page_height)
 
-        # Checkmark coordinates (right side)
-        ck_x = stamp_w - 25
+        # ── Acrobat-style stamp ─────────────────────────────────────
+        # No border, no background — just text and green checkmark
+        # Green checkmark coordinates (right side, big like Acrobat)
+        ck_x = stamp_w - 30
         ck_y = stamp_h / 2 + 5
 
-        # Build the stamp content stream
-        # We use q + translate to position the stamp at (sx, sy)
-        stamp_ops = f"""q
-{border_color} RG
-0.5 w
-0 0 {stamp_w} {stamp_h} re S
-BT
-{green} rg
-/F2 14 Tf
-4 {stamp_h - 18} Td ({safe(status_text)}) Tj
-{gray_color} rg
-/F1 8 Tf
-0 -14 Td (Digitally signed by {safe(signer_name)}) Tj"""
+        stamp_ops = f"""BT
+0 0 0 rg
+/F2 13 Tf
+0 {stamp_h - 16} Td ({safe(status_text)}) Tj
+/F1 8 Td
+0 -14 Td (Digitally signed by {safe(signer_name[:30])}) Tj"""
         if time_str:
             stamp_ops += f"""
 0 -11 Td (Date: {safe(time_str)}) Tj"""
@@ -196,23 +309,21 @@ BT
 0 -10 Td (Location: {safe(location[:30])}) Tj"""
         stamp_ops += f"""
 ET
-{green} RG
-{green} rg
-3 w
-{ck_x} {ck_y} m {ck_x+5} {ck_y-8} l {ck_x+18} {ck_y+8} l S
-{ck_x+10} {ck_y-1} 11 0 360 arc S
-Q"""
+0.13 0.55 0.13 RG
+0.13 0.55 0.13 rg
+4 w
+{ck_x} {ck_y} m {ck_x+6} {ck_y-10} l {ck_x+22} {ck_y+8} l S
+{ck_x+13} {ck_y-1} 14 0 360 arc S
+"""
 
-        # Wrap with translation to position at (sx, sy)
+        # Wrap with translation
         all_commands.append(f"q 1 0 0 1 {sx} {sy} cm\n{stamp_ops}\nQ")
 
-    # ── Append ALL commands to content stream ────────────────────────
     combined = "\n".join(all_commands)
     _append_to_contents(page_obj, pdf, combined)
 
 
 def _format_time(signing_time):
-    """Format signing time to readable string."""
     if not signing_time or signing_time == "Unknown":
         return ""
     ts = str(signing_time)[:35]
@@ -281,7 +392,6 @@ def _get_status(sig):
 
 
 def _ensure_fonts(page_obj):
-    """Ensure the page has Helvetica fonts."""
     if "/Resources" not in page_obj:
         page_obj["/Resources"] = pikepdf.Dictionary()
     if "/Font" not in page_obj["/Resources"]:
