@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import {
   verifyPdf,
   VerificationResult,
@@ -10,6 +10,8 @@ import {
   extractAndTrust,
   removeFromTrustStore,
 } from "@/lib/api";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 type View = "upload" | "result";
 
@@ -431,12 +433,121 @@ export default function VerifyPage() {
             )}
           </div>
 
+          {/* PDF Preview */}
+          {file && (
+            <div className="card overflow-hidden">
+              <div className="flex items-center justify-between bg-gray-50 dark:bg-gray-800 px-4 py-2.5 border-b border-gray-200 dark:border-gray-700">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm">📄</span>
+                  <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">PDF Preview</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {/* Verification badge on preview */}
+                  <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${
+                    result.is_valid
+                      ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                      : hasUntrusted
+                      ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                      : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                  }`}>
+                    {result.is_valid ? "✓" : hasUntrusted ? "⚠" : "✗"}
+                    {result.is_valid ? "VERIFIED" : hasUntrusted ? "UNTRUSTED" : "INVALID"}
+                  </div>
+                </div>
+              </div>
+              <div className="relative bg-gray-100 dark:bg-gray-900 flex justify-center" style={{ maxHeight: "500px" }}>
+                <iframe
+                  src={file ? URL.createObjectURL(file) : ""}
+                  className="w-full border-0"
+                  style={{ height: "500px" }}
+                  title="PDF Preview"
+                />
+                {/* Overlay signature badge (like Acrobat) */}
+                <div className="absolute top-4 right-4 animate-bounceIn">
+                  <div className={`flex flex-col items-center gap-1 px-4 py-3 rounded-2xl shadow-xl backdrop-blur-sm ${
+                    result.is_valid
+                      ? "bg-green-500/90 text-white"
+                      : hasUntrusted
+                      ? "bg-amber-500/90 text-white"
+                      : "bg-red-500/90 text-white"
+                  }`}>
+                    <div className="text-3xl font-bold">
+                      {result.is_valid ? "✓" : hasUntrusted ? "⚠" : "✗"}
+                    </div>
+                    <div className="text-xs font-bold tracking-wide">
+                      {result.is_valid ? "SIGNATURE VALID" : hasUntrusted ? "UNTRUSTED" : "SIGNATURE INVALID"}
+                    </div>
+                    <div className="text-[10px] opacity-80">
+                      {result.signature_count} signature(s)
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Actions */}
           <div className="flex gap-3">
             <button onClick={reset} className="btn btn-outline flex-1">🔍 Verify Another PDF</button>
+            <ExportButton file={file} result={result} hasUntrusted={hasUntrusted} />
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+function ExportButton({ file, result, hasUntrusted }: { file: File | null; result: VerificationResult | null; hasUntrusted: boolean | undefined }) {
+  const [exporting, setExporting] = useState(false);
+  const [exportResult, setExportResult] = useState<any>(null);
+
+  const handleExport = async () => {
+    if (!file) return;
+    setExporting(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+
+      const res = await fetch(`${API_BASE}/api/verify/stamp`, {
+        method: "POST",
+        body: form,
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || "Export failed");
+      }
+      const data = await res.json();
+      setExportResult(data);
+    } catch (err: any) {
+      alert(`Export failed: ${err.message}`);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  if (exportResult) {
+    return (
+      <a
+        href={`${API_BASE}${exportResult.download_url}`}
+        className="btn btn-primary flex-1"
+        download
+      >
+        ⬇️ Download Verified PDF
+      </a>
+    );
+  }
+
+  return (
+    <button
+      onClick={handleExport}
+      disabled={exporting || !file}
+      className="btn btn-primary flex-1"
+    >
+      {exporting ? (
+        <><span className="animate-spin">⏳</span> Creating...</>
+      ) : (
+        "📄 Export Verified PDF"
+      )}
+    </button>
   );
 }

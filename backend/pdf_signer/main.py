@@ -21,6 +21,7 @@ from .cert_utils import parse_pkcs12, generate_self_signed_cert
 from .signing_service import sign_pdf, get_signature_positions, get_timestamp_servers, encrypt_pdf, get_pdf_info
 from .verification_service import verify_pdf
 from .trust_store import extract_certs_from_pdf
+from .verification_stamp import stamp_verification_result
 
 
 # Create app
@@ -678,6 +679,63 @@ async def verify_with_trust_store(
         "id": record.id,
         "trusted_store_used": len(trusted_pems),
         **result,
+    }
+
+
+@app.post("/api/verify/stamp")
+async def stamp_verified_pdf(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    """Verify a PDF and create a stamped copy with verification result embedded."""
+    ext = Path(file.filename).suffix.lower()
+    if ext not in ALLOWED_PDF_EXTENSIONS:
+        raise HTTPException(400, "Only PDF files are accepted")
+
+    content = await file.read()
+    if len(content) > MAX_UPLOAD_SIZE:
+        raise HTTPException(413, f"File too large. Max: {MAX_UPLOAD_SIZE // 1024 // 1024}MB")
+    if len(content) == 0:
+        raise HTTPException(400, "Empty file")
+
+    verify_id = str(uuid.uuid4())
+    pdf_path = UPLOADS_DIR / f"stamp_{verify_id}_{file.filename}"
+    with open(pdf_path, "wb") as f:
+        f.write(content)
+
+    # Get trusted PEMs
+    trusted_certs = db.query(TrustedCertificate).all()
+    trusted_pems = [c.pem_data for c in trusted_certs if c.pem_data]
+
+    # Verify
+    try:
+        result = verify_pdf(str(pdf_path), trusted_pems=trusted_pems if trusted_pems else None)
+    except Exception as e:
+        raise HTTPException(500, f"Verification failed: {str(e)}")
+
+    # Create stamped PDF
+    try:
+        stamped_path = stamp_verification_result(str(pdf_path), result)
+        stamped_name = Path(stamped_path).name
+    except Exception as e:
+        raise HTTPException(500, f"Failed to create verification stamp: {str(e)}")
+
+    # Record verification
+    record = VerificationRecord(
+        filename=file.filename,
+        file_path=str(pdf_path),
+        is_valid=1 if result["is_valid"] else 0,
+        signature_count=result["signature_count"],
+        validation_details=json.dumps(result, default=str),
+    )
+    db.add(record)
+    db.commit()
+
+    return {
+        "id": record.id,
+        "verification": result,
+        "stamped_filename": stamped_name,
+        "download_url": f"/api/download-file/{stamped_name}",
     }
 
 
