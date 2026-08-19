@@ -207,11 +207,50 @@ export default function VerifyPage() {
     );
   }
 
-  // ─── Results Screen (side-by-side on desktop) ────────────────
+  // ─── Results Screen (PDF center, results right) ─────────────
   return (
     <div className="h-full flex">
-      {/* ─── Left Panel: Results ──────────────────────── */}
-      <div className="w-[420px] shrink-0 border-r border-gray-200/60 dark:border-gray-800/60 overflow-y-auto bg-white dark:bg-gray-950">
+      {/* ─── Center: PDF Preview ──────────────────────── */}
+      <div className="flex-1 overflow-hidden bg-gray-100 dark:bg-gray-900 flex flex-col border-r border-gray-200/60 dark:border-gray-800/60">
+        <div className="flex items-center justify-between bg-white dark:bg-gray-950 px-4 py-2 border-b border-gray-200/60 dark:border-gray-800/60 shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="text-sm">📄</span>
+            <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">PDF Preview</span>
+          </div>
+          <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+            result.is_valid ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+              : hasUntrusted ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+              : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+          }`}>
+            {result.is_valid ? "✓ VERIFIED" : hasUntrusted ? "⚠ UNTRUSTED" : "✗ INVALID"}
+          </div>
+        </div>
+        <div className="flex-1 relative">
+          <iframe
+            src={file ? URL.createObjectURL(file) : ""}
+            className="w-full h-full border-0"
+            title="PDF Preview"
+          />
+          {/* Floating badge */}
+          <div className="absolute top-4 right-4 animate-bounceIn">
+            <div className={`flex flex-col items-center gap-1 px-3 py-2 rounded-xl shadow-xl backdrop-blur-sm ${
+              result.is_valid ? "bg-green-500/90 text-white"
+                : hasUntrusted ? "bg-amber-500/90 text-white"
+                : "bg-red-500/90 text-white"
+            }`}>
+              <div className="text-2xl font-bold">
+                {result.is_valid ? "✓" : hasUntrusted ? "⚠" : "✗"}
+              </div>
+              <div className="text-[10px] font-bold tracking-wide">
+                {result.is_valid ? "SIGNATURE VALID" : hasUntrusted ? "UNTRUSTED" : "INVALID"}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── Right Panel: Results ──────────────────────── */}
+      <div className="w-[400px] shrink-0 overflow-y-auto bg-white dark:bg-gray-950">
         <div className="p-5 space-y-4">
           {/* Status banner */}
           <div className={`rounded-xl p-4 text-center ${
@@ -397,44 +436,6 @@ export default function VerifyPage() {
         </div>
       </div>
 
-      {/* ─── Right Panel: PDF Preview ─────────────────── */}
-      <div className="flex-1 overflow-hidden bg-gray-100 dark:bg-gray-900 flex flex-col">
-        <div className="flex items-center justify-between bg-white dark:bg-gray-950 px-4 py-2 border-b border-gray-200/60 dark:border-gray-800/60 shrink-0">
-          <div className="flex items-center gap-2">
-            <span className="text-sm">📄</span>
-            <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">PDF Preview</span>
-          </div>
-          <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
-            result.is_valid ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-              : hasUntrusted ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-              : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-          }`}>
-            {result.is_valid ? "✓ VERIFIED" : hasUntrusted ? "⚠ UNTRUSTED" : "✗ INVALID"}
-          </div>
-        </div>
-        <div className="flex-1 relative">
-          <iframe
-            src={file ? URL.createObjectURL(file) : ""}
-            className="w-full h-full border-0"
-            title="PDF Preview"
-          />
-          {/* Floating badge */}
-          <div className="absolute top-4 right-4 animate-bounceIn">
-            <div className={`flex flex-col items-center gap-1 px-3 py-2 rounded-xl shadow-xl backdrop-blur-sm ${
-              result.is_valid ? "bg-green-500/90 text-white"
-                : hasUntrusted ? "bg-amber-500/90 text-white"
-                : "bg-red-500/90 text-white"
-            }`}>
-              <div className="text-2xl font-bold">
-                {result.is_valid ? "✓" : hasUntrusted ? "⚠" : "✗"}
-              </div>
-              <div className="text-[10px] font-bold tracking-wide">
-                {result.is_valid ? "SIGNATURE VALID" : hasUntrusted ? "UNTRUSTED" : "INVALID"}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
