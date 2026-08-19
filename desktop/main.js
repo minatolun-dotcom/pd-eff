@@ -41,23 +41,8 @@ function saveWindowState() {
   } catch (e) { /* ignore */ }
 }
 
-// ─── Second instance handler ───────────────────────────────────────────
 if (!gotTheLock) {
-  app.on('second-instance', () => {
-    // Focus existing window when user tries to open a second instance
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-    }
-  });
   app.quit();
-} else {
-  app.on('second-instance', () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-    }
-  });
 }
 
 // ─── Splash Screen ────────────────────────────────────────────────────
@@ -164,10 +149,14 @@ async function startBackend() {
   let command, args, cwd;
 
   if (isDev) {
-    const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
-    command = pythonCmd;
-    args = [path.join(__dirname, '..', 'backend', 'run.py')];
-    cwd = path.join(__dirname, '..', 'backend');
+    const backendDir = path.join(__dirname, '..', 'backend');
+    if (process.platform === 'win32') {
+      command = path.join(backendDir, 'venv', 'Scripts', 'python.exe');
+    } else {
+      command = path.join(backendDir, 'venv', 'bin', 'python');
+    }
+    args = [path.join(backendDir, 'run.py')];
+    cwd = backendDir;
   } else {
     const exeName = process.platform === 'win32' ? 'pd-eff-api.exe' : 'pd-eff-api';
     const resourcesPath = process.resourcesPath || path.join(__dirname);
@@ -190,9 +179,11 @@ async function startBackend() {
     const line = data.toString().trim();
     if (line) console.log(`[backend] ${line}`);
     if (splashWindow && !splashWindow.isDestroyed()) {
-      splashWindow.webContents.executeJavaScript(
-        `document.getElementById('status').textContent = '${line.substring(0, 60).replace(/'/g, "\\'")}'`
-      );
+      try {
+        splashWindow.webContents.executeJavaScript(
+          `document.getElementById('status').textContent = '${line.substring(0, 60).replace(/'/g, "\\'").replace(/\\/g, '\\\\')}'`
+        );
+      } catch (e) { /* splash already closed */ }
     }
   });
 
@@ -593,26 +584,18 @@ app.whenReady().then(async () => {
 
   createSplash();
 
+  const updateSplash = (msg) => {
+    if (splashWindow && !splashWindow.isDestroyed()) {
+      try { splashWindow.webContents.executeJavaScript(`document.getElementById('status').textContent = '${msg}'`); } catch (e) {}
+    }
+  };
+
   try {
-    if (splashWindow && !splashWindow.isDestroyed()) {
-      splashWindow.webContents.executeJavaScript(
-        `document.getElementById('status').textContent = 'Starting backend server...'`
-      );
-    }
+    updateSplash('Starting backend server...');
     await startBackend();
-
-    if (splashWindow && !splashWindow.isDestroyed()) {
-      splashWindow.webContents.executeJavaScript(
-        `document.getElementById('status').textContent = 'Waiting for server...'`
-      );
-    }
+    updateSplash('Waiting for server...');
     await waitForBackend();
-
-    if (splashWindow && !splashWindow.isDestroyed()) {
-      splashWindow.webContents.executeJavaScript(
-        `document.getElementById('status').textContent = 'Loading interface...'`
-      );
-    }
+    updateSplash('Loading interface...');
 
     createMainWindow(pendingFile);
     createTray();
