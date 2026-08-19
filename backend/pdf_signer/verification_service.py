@@ -89,14 +89,18 @@ def _validate_single_signature(
         # Build validation context
         vc = ValidationContext(trust_roots=trust_roots or [])
 
-        # Validate the signature
-        status = validate_pdf_signature(
-            sig_obj,
-            vc,
-            key_usage_settings=KeyUsageConstraints(
-                key_usage={"digital_signature", "non_repudiation"},
-            ),
-        )
+        # Validate the signature in a thread to avoid asyncio event loop conflicts
+        import concurrent.futures
+        def _validate():
+            return validate_pdf_signature(
+                sig_obj,
+                vc,
+                key_usage_settings=KeyUsageConstraints(
+                    key_usage={"digital_signature", "non_repudiation"},
+                ),
+            )
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            status = pool.submit(_validate).result(timeout=10)
 
         sig_info["intact"] = status.intact
         sig_info["valid"] = status.valid

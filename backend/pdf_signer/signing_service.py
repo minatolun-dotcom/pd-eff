@@ -258,7 +258,11 @@ def get_pdf_info(pdf_path: str) -> dict:
                     try:
                         from pyhanko.sign.validation import validate_pdf_signature
                         from pyhanko_certvalidator import ValidationContext
-                        status = validate_pdf_signature(sig, ValidationContext())
+                        import concurrent.futures
+                        def _val(s):
+                            return validate_pdf_signature(s, ValidationContext())
+                        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                            status = pool.submit(_val, sig).result(timeout=10)
                         sig_info["intact"] = status.intact
                         sig_info["valid"] = status.valid
                         if status.signing_cert:

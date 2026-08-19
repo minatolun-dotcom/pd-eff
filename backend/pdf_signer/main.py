@@ -1,9 +1,11 @@
 """pd-eff — PDF Digital Signing & Verification API."""
+import asyncio
 import json
 import os
 import shutil
 import uuid
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
@@ -14,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
 from .database import init_db, get_db, Certificate, SigningRecord, VerificationRecord
-from .config import UPLOADS_DIR, CERTS_DIR, SIGNED_DIR, ALLOWED_PDF_EXTENSIONS, ALLOWED_CERT_EXTENSIONS
+from .config import UPLOADS_DIR, CERTS_DIR, SIGNED_DIR, MAX_UPLOAD_SIZE, ALLOWED_PDF_EXTENSIONS, ALLOWED_CERT_EXTENSIONS
 from .cert_utils import parse_pkcs12, generate_self_signed_cert
 from .signing_service import sign_pdf, get_signature_positions, get_timestamp_servers, encrypt_pdf, get_pdf_info
 from .verification_service import verify_pdf
@@ -45,6 +47,27 @@ app.add_middleware(
 @app.on_event("startup")
 def startup():
     init_db()
+
+    # Cleanup old temp files (>1 hour) on startup
+    _cleanup_old_files(UPLOADS_DIR, max_age_hours=1)
+    _cleanup_old_files(SIGNED_DIR, max_age_hours=24)
+
+
+def _cleanup_old_files(directory: Path, max_age_hours: int = 1):
+    """Remove files older than max_age_hours to prevent disk leak."""
+    import time as _time
+    now = _time.time()
+    cutoff = now - (max_age_hours * 3600)
+    removed = 0
+    for f in directory.iterdir():
+        if f.is_file() and f.stat().st_mtime < cutoff:
+            try:
+                f.unlink()
+                removed += 1
+            except Exception:
+                pass
+    if removed:
+        print(f"Cleaned up {removed} old files from {directory.name}/")
 
     # Serve frontend (standalone Next.js build)
     # Docker: FRONTEND_DIR=/app/.next-standalone
@@ -269,11 +292,17 @@ async def sign_pdf_endpoint(
     if not cert:
         raise HTTPException(404, "Certificate not found")
 
+    # Validate file size
+    content = await file.read()
+    if len(content) > MAX_UPLOAD_SIZE:
+        raise HTTPException(413, f"File too large. Max size: {MAX_UPLOAD_SIZE // 1024 // 1024}MB")
+    if len(content) == 0:
+        raise HTTPException(400, "Empty file")
+
     # Save uploaded PDF
     pdf_id = str(uuid.uuid4())
     pdf_path = UPLOADS_DIR / f"{pdf_id}_{file.filename}"
     with open(pdf_path, "wb") as f:
-        content = await file.read()
         f.write(content)
 
     # Sign the PDF
@@ -358,11 +387,16 @@ async def verify_pdf_endpoint(
     if ext not in ALLOWED_PDF_EXTENSIONS:
         raise HTTPException(400, "Only PDF files are accepted")
 
-    # Save uploaded PDF
+    # Validate and save
+    content = await file.read()
+    if len(content) > MAX_UPLOAD_SIZE:
+        raise HTTPException(413, f"File too large. Max: {MAX_UPLOAD_SIZE // 1024 // 1024}MB")
+    if len(content) == 0:
+        raise HTTPException(400, "Empty file")
+
     verify_id = str(uuid.uuid4())
     pdf_path = UPLOADS_DIR / f"verify_{verify_id}_{file.filename}"
     with open(pdf_path, "wb") as f:
-        content = await file.read()
         f.write(content)
 
     # Verify
@@ -409,7 +443,14 @@ def list_verification_records(db: Session = Depends(get_db)):
 @app.get("/api/pdf/info")
 def get_pdf_info_endpoint(pdf_path: str):
     """Get PDF metadata and signature information."""
-    if not os.path.exists(pdf_path):
+    # Security: only allow paths within data directory
+    resolved = Path(pdf_path).resolve()
+    allowed_dirs = [d.resolve() for d in [UPLOADS_DIR, SIGNED_DIR, CERTS_DIR]]
+    allowed = any(str(resolved).startswith(str(d)) for d in allowed_dirs)
+    if not allowed and os.path.exists(pdf_path):
+        # Also allow /tmp for development
+        allowed = str(resolved).startswith("/tmp")
+    if not os.path.exists(pdf_path) or not allowed:
         raise HTTPException(404, "PDF file not found")
     return get_pdf_info(pdf_path)
 
@@ -425,10 +466,15 @@ async def encrypt_pdf_endpoint(
     if ext not in ALLOWED_PDF_EXTENSIONS:
         raise HTTPException(400, "Only PDF files are accepted")
 
+    content = await file.read()
+    if len(content) > MAX_UPLOAD_SIZE:
+        raise HTTPException(413, f"File too large. Max: {MAX_UPLOAD_SIZE // 1024 // 1024}MB")
+    if len(content) == 0:
+        raise HTTPException(400, "Empty file")
+
     pdf_id = str(uuid.uuid4())
     pdf_path = UPLOADS_DIR / f"{pdf_id}_{file.filename}"
     with open(pdf_path, "wb") as f:
-        content = await file.read()
         f.write(content)
 
     try:
@@ -509,6 +555,14 @@ async def sign_pdf_advanced(
     ext = Path(file.filename).suffix.lower()
     if ext not in ALLOWED_PDF_EXTENSIONS:
         raise HTTPException(400, "Only PDF files are accepted")
+
+    # Validate file size upfront
+    content = await file.read()
+    await file.seek(0)
+    if len(content) > MAX_UPLOAD_SIZE:
+        raise HTTPException(413, f"File too large. Max: {MAX_UPLOAD_SIZE // 1024 // 1024}MB")
+    if len(content) == 0:
+        raise HTTPException(400, "Empty file")
 
     cert = db.query(Certificate).filter(Certificate.id == certificate_id).first()
     if not cert:
@@ -626,11 +680,16 @@ async def sign_pdf_with_pkcs11(
     if ext not in ALLOWED_PDF_EXTENSIONS:
         raise HTTPException(400, "Only PDF files are accepted")
 
-    # Save uploaded PDF
+    # Validate and save
+    content = await file.read()
+    if len(content) > MAX_UPLOAD_SIZE:
+        raise HTTPException(413, f"File too large. Max: {MAX_UPLOAD_SIZE // 1024 // 1024}MB")
+    if len(content) == 0:
+        raise HTTPException(400, "Empty file")
+
     pdf_id = str(uuid.uuid4())
     pdf_path = UPLOADS_DIR / f"{pdf_id}_{file.filename}"
     with open(pdf_path, "wb") as f:
-        content = await file.read()
         f.write(content)
 
     # Sign with PKCS#11

@@ -27,3 +27,5 @@ backend/data/certs/*
 Thumbs.db
 credentials
 desktop/dist/
+backend/data/
+*.db
