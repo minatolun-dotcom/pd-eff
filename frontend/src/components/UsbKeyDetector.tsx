@@ -101,7 +101,7 @@ export default function UsbKeyDetector({ onTokenDetected, selectedToken }: UsbKe
   // Scanning state
   if (scanning) {
     return (
-      <div className="flex items-center gap-4 p-4 bg-blue-50 rounded-2xl border border-blue-200/60">
+      <div className="flex items-center gap-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-2xl border border-blue-200 dark:border-blue-800/60">
         <div className="relative">
           <div className="w-12 h-12 rounded-2xl bg-blue-100 flex items-center justify-center text-2xl animate-pulse">
             🔑
@@ -120,7 +120,7 @@ export default function UsbKeyDetector({ onTokenDetected, selectedToken }: UsbKe
   if (selectedToken) {
     return (
       <div className="space-y-3">
-        <div className="flex items-center gap-3 p-4 bg-green-50 rounded-2xl border border-green-200/60 animate-scaleIn">
+        <div className="flex items-center gap-3 p-4 bg-green-50 dark:bg-green-900/20 rounded-2xl border border-green-200 dark:border-green-800/60 animate-scaleIn">
           <div className="w-12 h-12 rounded-2xl bg-green-100 flex items-center justify-center text-2xl">
             🔐
           </div>
@@ -136,20 +136,20 @@ export default function UsbKeyDetector({ onTokenDetected, selectedToken }: UsbKe
         {/* Other tokens */}
         {tokens.length > 1 && (
           <div>
-            <p className="text-xs text-gray-500 mb-2 font-medium">Other tokens available:</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-2 font-medium">Other tokens available:</p>
             <div className="space-y-1.5">
               {tokens.filter((t) => t.slot_id !== selectedToken.slot_id).map((token) => (
                 <button
                   key={token.slot_id}
                   onClick={() => handleTokenSelect(token)}
-                  className="w-full flex items-center gap-3 p-3 rounded-xl border border-gray-200 hover:border-blue-300 hover:bg-blue-50/50 transition-all text-left"
+                  className="w-full flex items-center gap-3 p-3 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-blue-300 hover:bg-blue-50 dark:bg-blue-900/20/50 transition-all text-left"
                 >
-                  <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-sm">
+                  <div className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-sm">
                     🔑
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">{token.label}</p>
-                    <p className="text-xs text-gray-500">{token.model}</p>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{token.label}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{token.model}</p>
                   </div>
                 </button>
               ))}
@@ -164,13 +164,13 @@ export default function UsbKeyDetector({ onTokenDetected, selectedToken }: UsbKe
   return (
     <div className="space-y-3">
       {!manualMode ? (
-        <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-2xl border border-gray-200">
-          <div className="w-12 h-12 rounded-2xl bg-gray-100 flex items-center justify-center text-2xl">
+        <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700">
+          <div className="w-12 h-12 rounded-2xl bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-2xl">
             🔑
           </div>
           <div className="flex-1">
-            <p className="font-semibold text-gray-700 text-sm">No digital key detected</p>
-            <p className="text-gray-500 text-xs mt-0.5">Plug in your USB key and try again</p>
+            <p className="font-semibold text-gray-700 dark:text-gray-300 text-sm">No digital key detected</p>
+            <p className="text-gray-500 dark:text-gray-400 text-xs mt-0.5">Plug in your USB key and try again</p>
           </div>
           <button
             onClick={autoDetect}
@@ -181,7 +181,7 @@ export default function UsbKeyDetector({ onTokenDetected, selectedToken }: UsbKe
         </div>
       ) : (
         <div className="space-y-3">
-          <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200/60">
+          <div className="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-2xl border border-amber-200 dark:border-amber-800/60">
             <div className="flex items-center gap-3 mb-3">
               <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center text-lg">
                 ⚠️
@@ -216,7 +216,7 @@ export default function UsbKeyDetector({ onTokenDetected, selectedToken }: UsbKe
           </div>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 rounded-2xl p-3 text-red-700 text-sm flex items-start gap-2 animate-slideUp">
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 rounded-2xl p-3 text-red-700 text-sm flex items-start gap-2 animate-slideUp">
               <span>⚠️</span>
               <span>{error}</span>
             </div>

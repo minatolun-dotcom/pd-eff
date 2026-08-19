@@ -202,12 +202,12 @@ export default function PdfSigner({ file, onSign, signing }: PdfSignerProps) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-96 bg-gray-50">
+      <div className="flex items-center justify-center h-96 bg-gray-50 dark:bg-gray-800">
         <div className="text-center animate-fadeIn">
           <div className="w-16 h-16 rounded-2xl bg-blue-100 flex items-center justify-center text-3xl mx-auto mb-4 animate-pulse">
             📄
           </div>
-          <p className="text-gray-500 font-medium">Loading PDF...</p>
+          <p className="text-gray-500 dark:text-gray-400 dark:text-gray-500 font-medium">Loading PDF...</p>
         </div>
       </div>
     );
@@ -216,25 +216,25 @@ export default function PdfSigner({ file, onSign, signing }: PdfSignerProps) {
   return (
     <div className="flex flex-col">
       {/* Toolbar */}
-      <div className="flex items-center justify-between bg-gray-50 border-b border-gray-200 px-4 py-2.5">
+      <div className="flex items-center justify-between bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-2.5">
         {/* Left: Navigation */}
         <div className="flex items-center gap-2">
           <button
             onClick={() => setPageNum(Math.max(1, pageNum - 1))}
             disabled={pageNum <= 1}
-            className="w-8 h-8 rounded-lg bg-white border border-gray-200 flex items-center justify-center text-gray-600 hover:bg-gray-50 hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed transition-all text-sm font-bold"
+            className="w-8 h-8 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 flex items-center justify-center text-gray-600 dark:text-gray-400 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-800 hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed transition-all text-sm font-bold"
           >
             ‹
           </button>
           <div className="flex items-center gap-1 text-sm">
-            <span className="font-semibold text-gray-900">{pageNum}</span>
-            <span className="text-gray-400">/</span>
-            <span className="text-gray-500">{totalPages}</span>
+            <span className="font-semibold text-gray-900 dark:text-white">{pageNum}</span>
+            <span className="text-gray-400 dark:text-gray-500">/</span>
+            <span className="text-gray-500 dark:text-gray-400 dark:text-gray-500">{totalPages}</span>
           </div>
           <button
             onClick={() => setPageNum(Math.min(totalPages, pageNum + 1))}
             disabled={pageNum >= totalPages}
-            className="w-8 h-8 rounded-lg bg-white border border-gray-200 flex items-center justify-center text-gray-600 hover:bg-gray-50 hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed transition-all text-sm font-bold"
+            className="w-8 h-8 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 flex items-center justify-center text-gray-600 dark:text-gray-400 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-800 hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed transition-all text-sm font-bold"
           >
             ›
           </button>
@@ -247,7 +247,7 @@ export default function PdfSigner({ file, onSign, signing }: PdfSignerProps) {
               ✓ Area Selected
             </span>
           ) : (
-            <span className="text-xs text-gray-400 font-medium">
+            <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">
               Draw a rectangle to place signature
             </span>
           )}
@@ -265,16 +265,16 @@ export default function PdfSigner({ file, onSign, signing }: PdfSignerProps) {
           )}
           <button
             onClick={() => setScale(Math.max(0.5, scale - 0.25))}
-            className="w-7 h-7 rounded-lg bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-50 transition-all text-xs"
+            className="w-7 h-7 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 flex items-center justify-center text-gray-500 dark:text-gray-400 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-800 transition-all text-xs"
           >
             −
           </button>
-          <span className="text-xs text-gray-500 font-medium w-10 text-center">
+          <span className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 font-medium w-10 text-center">
             {Math.round(scale * 100)}%
           </span>
           <button
             onClick={() => setScale(Math.min(3, scale + 0.25))}
-            className="w-7 h-7 rounded-lg bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-50 transition-all text-xs"
+            className="w-7 h-7 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 flex items-center justify-center text-gray-500 dark:text-gray-400 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-800 transition-all text-xs"
           >
             +
           </button>
@@ -284,7 +284,7 @@ export default function PdfSigner({ file, onSign, signing }: PdfSignerProps) {
       {/* Canvas */}
       <div
         ref={containerRef}
-        className="relative bg-gray-100 overflow-auto flex justify-center"
+        className="relative bg-gray-100 dark:bg-gray-800 overflow-auto flex justify-center"
         style={{ maxHeight: "600px" }}
       >
         <canvas
@@ -306,8 +306,8 @@ export default function PdfSigner({ file, onSign, signing }: PdfSignerProps) {
         {/* Overlay hint */}
         {!rectangle && !isDrawing && !signing && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="bg-white/90 backdrop-blur-sm rounded-2xl px-5 py-3 shadow-lg border border-gray-200/50 animate-fadeIn">
-              <p className="text-sm text-gray-600 font-medium flex items-center gap-2">
+            <div className="bg-white dark:bg-gray-900/90 backdrop-blur-sm rounded-2xl px-5 py-3 shadow-lg border border-gray-200 dark:border-gray-700/50 animate-fadeIn">
+              <p className="text-sm text-gray-600 dark:text-gray-400 dark:text-gray-500 font-medium flex items-center gap-2">
                 <span className="text-lg">✍️</span>
                 Click and drag to draw signature area
               </p>
@@ -317,9 +317,9 @@ export default function PdfSigner({ file, onSign, signing }: PdfSignerProps) {
       </div>
 
       {/* Bottom: Sign controls */}
-      <div className="bg-white border-t border-gray-200 px-4 py-3.5">
+      <div className="bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 px-4 py-3.5">
         {!rectangle ? (
-          <p className="text-sm text-gray-400 text-center font-medium">
+          <p className="text-sm text-gray-400 dark:text-gray-500 text-center font-medium">
             Draw a rectangle on the PDF to place your signature
           </p>
         ) : (
@@ -329,10 +329,10 @@ export default function PdfSigner({ file, onSign, signing }: PdfSignerProps) {
                 ✓
               </div>
               <div>
-                <p className="text-sm font-semibold text-gray-900">
+                <p className="text-sm font-semibold text-gray-900 dark:text-white">
                   Area Selected
                 </p>
-                <p className="text-xs text-gray-400">
+                <p className="text-xs text-gray-400 dark:text-gray-500">
                   {Math.round(rectangle.width)} × {Math.round(rectangle.height)} px · Page {pageNum}
                 </p>
               </div>

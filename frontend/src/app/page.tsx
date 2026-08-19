@@ -46,7 +46,7 @@ function StepIndicator({ current }: { current: Step }) {
             </div>
             <span
               className={`text-xs mt-1.5 font-medium ${
-                i === idx ? "text-blue-600" : i < idx ? "text-green-600" : "text-gray-400"
+                i === idx ? "text-blue-600" : i < idx ? "text-green-600" : "text-gray-400 dark:text-gray-500"
               }`}
             >
               {step.label}
@@ -185,17 +185,17 @@ export default function SignPage() {
       {step === "upload" && (
         <div className="animate-fadeIn">
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
               Sign a PDF Document
             </h1>
-            <p className="text-gray-500 text-base">
+            <p className="text-gray-500 dark:text-gray-400 dark:text-gray-500 text-base">
               Upload your PDF, draw where you want the signature, and sign with your digital key.
             </p>
           </div>
 
           <div
             className={`card p-12 transition-all duration-300 ${
-              isDragging ? "active border-blue-400 bg-blue-50/50" : ""
+              isDragging ? "active border-blue-400 bg-blue-50 dark:bg-blue-900/20/50" : ""
             }`}
             onDragOver={(e) => {
               e.preventDefault();
@@ -206,17 +206,17 @@ export default function SignPage() {
           >
             <label className="flex flex-col items-center justify-center w-full h-80 cursor-pointer group">
               <div className="relative mb-6">
-                <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center text-5xl group-hover:scale-110 transition-transform duration-300">
+                <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-blue-50 dark:from-blue-900/20 to-indigo-100 dark:to-indigo-900/20 flex items-center justify-center text-5xl group-hover:scale-110 transition-transform duration-300">
                   📄
                 </div>
-                <div className="absolute -bottom-1 -right-1 w-8 h-8 rounded-xl bg-blue-500 text-white flex items-center justify-center text-lg shadow-lg shadow-blue-500/30 group-hover:rotate-90 transition-transform duration-300">
+                <div className="absolute -bottom-1 -right-1 w-8 h-8 rounded-xl bg-blue-50 dark:bg-blue-900/200 text-white flex items-center justify-center text-lg shadow-lg shadow-blue-500/30 group-hover:rotate-90 transition-transform duration-300">
                   +
                 </div>
               </div>
-              <p className="text-xl font-semibold text-gray-800 mb-1">
+              <p className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-1">
                 {isDragging ? "Drop your PDF here" : "Drop a PDF here or click to upload"}
               </p>
-              <p className="text-sm text-gray-400">
+              <p className="text-sm text-gray-400 dark:text-gray-500">
                 PDF files up to 50MB
               </p>
               <input
@@ -234,7 +234,7 @@ export default function SignPage() {
       {step === "configure" && pdfFile && (
         <div className="space-y-5 animate-slideUp">
           {/* File info chip */}
-          <div className="flex items-center gap-3 bg-green-50 border border-green-200/80 rounded-2xl px-5 py-3 animate-scaleIn">
+          <div className="flex items-center gap-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800/80 rounded-2xl px-5 py-3 animate-scaleIn">
             <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center text-lg">
               ✅
             </div>
@@ -252,7 +252,7 @@ export default function SignPage() {
 
           {/* Signing method */}
           <div className="card p-5">
-            <h3 className="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
+            <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
               <span className="w-6 h-6 rounded-lg bg-blue-100 flex items-center justify-center text-xs">1</span>
               Signing Method
             </h3>
@@ -261,25 +261,25 @@ export default function SignPage() {
                 onClick={() => setSignMethod("key")}
                 className={`p-4 rounded-2xl border-2 text-left transition-all duration-200 ${
                   signMethod === "key"
-                    ? "border-blue-500 bg-blue-50 shadow-sm shadow-blue-500/10"
-                    : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                    ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20 shadow-sm shadow-blue-500/10"
+                    : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:bg-gray-800"
                 }`}
               >
                 <div className="text-2xl mb-2">🔐</div>
-                <div className="font-semibold text-gray-900 text-sm">Digital Key</div>
-                <div className="text-gray-500 text-xs mt-1">USB key, smart card, HSM</div>
+                <div className="font-semibold text-gray-900 dark:text-white text-sm">Digital Key</div>
+                <div className="text-gray-500 dark:text-gray-400 dark:text-gray-500 text-xs mt-1">USB key, smart card, HSM</div>
               </button>
               <button
                 onClick={() => setSignMethod("certificate")}
                 className={`p-4 rounded-2xl border-2 text-left transition-all duration-200 ${
                   signMethod === "certificate"
-                    ? "border-blue-500 bg-blue-50 shadow-sm shadow-blue-500/10"
-                    : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                    ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20 shadow-sm shadow-blue-500/10"
+                    : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:bg-gray-800"
                 }`}
               >
                 <div className="text-2xl mb-2">📜</div>
-                <div className="font-semibold text-gray-900 text-sm">Certificate File</div>
-                <div className="text-gray-500 text-xs mt-1">Upload .pfx/.p12 file</div>
+                <div className="font-semibold text-gray-900 dark:text-white text-sm">Certificate File</div>
+                <div className="text-gray-500 dark:text-gray-400 dark:text-gray-500 text-xs mt-1">Upload .pfx/.p12 file</div>
               </button>
             </div>
           </div>
@@ -287,7 +287,7 @@ export default function SignPage() {
           {/* Digital Key config */}
           {signMethod === "key" && (
             <div className="card p-5 animate-slideUp">
-              <h3 className="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
+              <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
                 <span className="w-6 h-6 rounded-lg bg-blue-100 flex items-center justify-center text-xs">2</span>
                 Digital Key
               </h3>
@@ -300,7 +300,7 @@ export default function SignPage() {
               />
               {selectedToken && (
                 <div className="mt-4 animate-slideUp">
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">PIN Code</label>
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">PIN Code</label>
                   <input
                     type="password"
                     value={pin}
@@ -316,13 +316,13 @@ export default function SignPage() {
           {/* Certificate config */}
           {signMethod === "certificate" && (
             <div className="card p-5 animate-slideUp">
-              <h3 className="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
+              <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
                 <span className="w-6 h-6 rounded-lg bg-blue-100 flex items-center justify-center text-xs">2</span>
                 Select Certificate
               </h3>
               {certificates.length === 0 ? (
                 <div className="text-center py-8">
-                  <p className="text-gray-500 text-sm mb-2">No certificates available</p>
+                  <p className="text-gray-500 dark:text-gray-400 dark:text-gray-500 text-sm mb-2">No certificates available</p>
                   <a
                     href="/certificates"
                     className="btn btn-primary btn-sm"
@@ -337,22 +337,22 @@ export default function SignPage() {
                       key={cert.id}
                       className={`flex items-center gap-3 p-3.5 rounded-2xl border-2 cursor-pointer transition-all duration-200 ${
                         selectedCert === cert.id
-                          ? "border-blue-500 bg-blue-50 shadow-sm shadow-blue-500/10"
-                          : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                          ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20 shadow-sm shadow-blue-500/10"
+                          : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:bg-gray-800"
                       }`}
                     >
                       <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
                         selectedCert === cert.id
-                          ? "border-blue-500 bg-blue-500"
-                          : "border-gray-300"
+                          ? "border-blue-500 bg-blue-50 dark:bg-blue-900/200"
+                          : "border-gray-300 dark:border-gray-600"
                       }`}>
                         {selectedCert === cert.id && (
-                          <div className="w-2 h-2 rounded-full bg-white" />
+                          <div className="w-2 h-2 rounded-full bg-white dark:bg-gray-900" />
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-gray-900 text-sm">{cert.name}</p>
-                        <p className="text-xs text-gray-500 truncate">
+                        <p className="font-semibold text-gray-900 dark:text-white text-sm">{cert.name}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 truncate">
                           {cert.subject_cn} · {cert.key_algorithm}
                           {cert.not_valid_after && (
                             <> · expires {new Date(cert.not_valid_after).toLocaleDateString()}</>
@@ -365,7 +365,7 @@ export default function SignPage() {
               )}
               {selectedCert && (
                 <div className="mt-4 animate-slideUp">
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Passphrase</label>
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Passphrase</label>
                   <input
                     type="password"
                     value={certPassphrase}
@@ -392,7 +392,7 @@ export default function SignPage() {
           </button>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 rounded-2xl p-4 text-red-700 text-sm animate-slideUp flex items-start gap-3">
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 rounded-2xl p-4 text-red-700 text-sm animate-slideUp flex items-start gap-3">
               <span className="text-lg">⚠️</span>
               <span>{error}</span>
             </div>
@@ -409,8 +409,8 @@ export default function SignPage() {
                 ✍️
               </div>
               <div>
-                <h2 className="font-bold text-gray-900">Draw Signature Area</h2>
-                <p className="text-sm text-gray-500">
+                <h2 className="font-bold text-gray-900 dark:text-white">Draw Signature Area</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">
                   Draw a rectangle on the PDF where you want your signature
                 </p>
               </div>
@@ -432,7 +432,7 @@ export default function SignPage() {
           </div>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 rounded-2xl p-4 text-red-700 text-sm animate-slideUp flex items-start gap-3">
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 rounded-2xl p-4 text-red-700 text-sm animate-slideUp flex items-start gap-3">
               <span className="text-lg">⚠️</span>
               <span>{error}</span>
             </div>
@@ -450,8 +450,8 @@ export default function SignPage() {
               <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-green-400 to-emerald-500 flex items-center justify-center text-4xl text-white mx-auto mb-5 shadow-lg shadow-green-500/30">
                 ✅
               </div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">Signed Successfully!</h2>
-              <p className="text-gray-500 mb-8">Your PDF has been digitally signed and is ready to download.</p>
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Signed Successfully!</h2>
+              <p className="text-gray-500 dark:text-gray-400 dark:text-gray-500 mb-8">Your PDF has been digitally signed and is ready to download.</p>
 
               <div className="flex gap-3 justify-center">
                 <a
@@ -472,26 +472,26 @@ export default function SignPage() {
 
           {/* Signature details */}
           <div className="card p-5">
-            <h4 className="font-bold text-gray-900 mb-3 text-sm flex items-center gap-2">
+            <h4 className="font-bold text-gray-900 dark:text-white mb-3 text-sm flex items-center gap-2">
               <span className="w-5 h-5 rounded-md bg-gray-100 flex items-center justify-center text-xs">📋</span>
               Signature Details
             </h4>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <span className="text-xs text-gray-400 font-medium">Field Name</span>
-                <p className="font-mono text-sm text-gray-900 mt-0.5">{result.field_name}</p>
+                <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">Field Name</span>
+                <p className="font-mono text-sm text-gray-900 dark:text-white mt-0.5">{result.field_name}</p>
               </div>
               <div>
-                <span className="text-xs text-gray-400 font-medium">Signer</span>
-                <p className="text-sm text-gray-900 mt-0.5">{result.signer_name}</p>
+                <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">Signer</span>
+                <p className="text-sm text-gray-900 dark:text-white mt-0.5">{result.signer_name}</p>
               </div>
               <div>
-                <span className="text-xs text-gray-400 font-medium">Signed At</span>
-                <p className="text-sm text-gray-900 mt-0.5">{new Date(result.timestamp).toLocaleString()}</p>
+                <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">Signed At</span>
+                <p className="text-sm text-gray-900 dark:text-white mt-0.5">{new Date(result.timestamp).toLocaleString()}</p>
               </div>
               <div>
-                <span className="text-xs text-gray-400 font-medium">File</span>
-                <p className="text-sm text-gray-900 mt-0.5 truncate">{result.signed_filename}</p>
+                <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">File</span>
+                <p className="text-sm text-gray-900 dark:text-white mt-0.5 truncate">{result.signed_filename}</p>
               </div>
             </div>
           </div>

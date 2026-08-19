@@ -74,10 +74,10 @@ export default function PdfViewer({ url, className = "" }: PdfViewerProps) {
 
   if (loading) {
     return (
-      <div className={`flex items-center justify-center bg-gray-50 rounded-xl ${className}`}>
+      <div className={`flex items-center justify-center bg-gray-50 dark:bg-gray-800 rounded-xl ${className}`}>
         <div className="text-center p-8">
           <div className="animate-spin text-4xl mb-3">📄</div>
-          <p className="text-gray-500 text-sm">Loading PDF...</p>
+          <p className="text-gray-500 dark:text-gray-400 text-sm">Loading PDF...</p>
         </div>
       </div>
     );
@@ -97,7 +97,7 @@ export default function PdfViewer({ url, className = "" }: PdfViewerProps) {
   return (
     <div className={`flex flex-col bg-gray-100 rounded-xl overflow-hidden ${className}`}>
       {/* Toolbar */}
-      <div className="flex items-center justify-between bg-white border-b border-gray-200 px-4 py-2">
+      <div className="flex items-center justify-between bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-4 py-2">
         <div className="flex items-center gap-2">
           <button
             onClick={() => setPageNum(Math.max(1, pageNum - 1))}
@@ -106,7 +106,7 @@ export default function PdfViewer({ url, className = "" }: PdfViewerProps) {
           >
             ← Prev
           </button>
-          <span className="text-sm text-gray-600 min-w-[100px] text-center">
+          <span className="text-sm text-gray-600 dark:text-gray-400 min-w-[100px] text-center">
             Page {pageNum} of {totalPages}
           </span>
           <button

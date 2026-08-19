@@ -84,8 +84,8 @@ export default function CertificatesPage() {
   return (
     <div className="max-w-4xl mx-auto">
       <div className="mb-8">
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Certificates</h2>
-        <p className="text-gray-600">
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Certificates</h2>
+        <p className="text-gray-600 dark:text-gray-400 dark:text-gray-500">
           Manage digital certificates for signing PDFs. Upload a PKCS#12 file or
           generate a self-signed certificate for testing.
         </p>
@@ -104,12 +104,12 @@ export default function CertificatesPage() {
             className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
               tab === t.id
                 ? "bg-blue-600 text-white"
-                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                : "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200"
             }`}
           >
             {t.label}
             {t.count !== undefined && (
-              <span className="ml-2 bg-white/20 px-2 py-0.5 rounded-full text-xs">
+              <span className="ml-2 bg-white dark:bg-gray-900/20 px-2 py-0.5 rounded-full text-xs">
                 {t.count}
               </span>
             )}
@@ -133,10 +133,10 @@ export default function CertificatesPage() {
       {tab === "list" && (
         <div className="space-y-4">
           {certificates.length === 0 ? (
-            <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+            <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
               <div className="text-5xl mb-4">📜</div>
-              <p className="text-gray-500 mb-4">No certificates yet</p>
-              <p className="text-sm text-gray-400">
+              <p className="text-gray-500 dark:text-gray-400 dark:text-gray-500 mb-4">No certificates yet</p>
+              <p className="text-sm text-gray-400 dark:text-gray-500">
                 Upload a PKCS#12 file or generate a self-signed certificate to get
                 started.
               </p>
@@ -145,7 +145,7 @@ export default function CertificatesPage() {
             certificates.map((cert) => (
               <div
                 key={cert.id}
-                className="bg-white rounded-xl border border-gray-200 p-6"
+                className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-6"
               >
                 <div className="flex items-start justify-between">
                   <div className="flex items-start gap-4">
@@ -153,27 +153,27 @@ export default function CertificatesPage() {
                       {cert.is_self_signed ? "🔑" : "🔐"}
                     </div>
                     <div>
-                      <h3 className="font-semibold text-gray-900">{cert.name}</h3>
-                      <p className="text-sm text-gray-500">{cert.filename}</p>
+                      <h3 className="font-semibold text-gray-900 dark:text-white">{cert.name}</h3>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">{cert.filename}</p>
                       <div className="mt-2 grid grid-cols-2 gap-x-8 gap-y-1 text-sm">
                         <div>
-                          <span className="text-gray-400">Subject: </span>
-                          <span className="text-gray-700">
+                          <span className="text-gray-400 dark:text-gray-500">Subject: </span>
+                          <span className="text-gray-700 dark:text-gray-300">
                             {cert.subject_cn}
                             {cert.subject_o && ` (${cert.subject_o})`}
                           </span>
                         </div>
                         <div>
-                          <span className="text-gray-400">Issuer: </span>
-                          <span className="text-gray-700">{cert.issuer_cn}</span>
+                          <span className="text-gray-400 dark:text-gray-500">Issuer: </span>
+                          <span className="text-gray-700 dark:text-gray-300">{cert.issuer_cn}</span>
                         </div>
                         <div>
-                          <span className="text-gray-400">Algorithm: </span>
-                          <span className="text-gray-700">{cert.key_algorithm}</span>
+                          <span className="text-gray-400 dark:text-gray-500">Algorithm: </span>
+                          <span className="text-gray-700 dark:text-gray-300">{cert.key_algorithm}</span>
                         </div>
                         <div>
-                          <span className="text-gray-400">Expires: </span>
-                          <span className="text-gray-700">
+                          <span className="text-gray-400 dark:text-gray-500">Expires: </span>
+                          <span className="text-gray-700 dark:text-gray-300">
                             {cert.not_valid_after
                               ? new Date(cert.not_valid_after).toLocaleDateString()
                               : "N/A"}
@@ -194,7 +194,7 @@ export default function CertificatesPage() {
                   </div>
                   <button
                     onClick={() => handleDelete(cert.id)}
-                    className="text-gray-400 hover:text-red-600 transition p-2"
+                    className="text-gray-400 dark:text-gray-500 hover:text-red-600 transition p-2"
                     title="Delete certificate"
                   >
                     🗑️
@@ -208,14 +208,14 @@ export default function CertificatesPage() {
 
       {/* Upload Tab */}
       {tab === "upload" && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-6">
+        <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-6 space-y-6">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               PKCS#12 Certificate File (.pfx or .p12)
             </label>
-            <label className="flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition">
+            <label className="flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition">
               <div className="text-4xl mb-2">📤</div>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-gray-600 dark:text-gray-400 dark:text-gray-500">
                 {uploadFile ? uploadFile.name : "Click to select .pfx or .p12 file"}
               </p>
               <input
@@ -228,7 +228,7 @@ export default function CertificatesPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Display Name
             </label>
             <input
@@ -236,12 +236,12 @@ export default function CertificatesPage() {
               value={uploadName}
               onChange={(e) => setUploadName(e.target.value)}
               placeholder="e.g. My Signing Certificate"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Passphrase
             </label>
             <input
@@ -249,7 +249,7 @@ export default function CertificatesPage() {
               value={uploadPassphrase}
               onChange={(e) => setUploadPassphrase(e.target.value)}
               placeholder="Enter certificate passphrase"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
 
@@ -265,7 +265,7 @@ export default function CertificatesPage() {
 
       {/* Generate Tab */}
       {tab === "generate" && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-6">
+        <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-6 space-y-6">
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-sm text-yellow-800">
             ⚠️ This generates a <strong>self-signed certificate</strong> for testing
             purposes. Self-signed certificates will show as &quot;untrusted&quot; in verification.
@@ -273,7 +273,7 @@ export default function CertificatesPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Common Name (Signer Name)
             </label>
             <input
@@ -281,12 +281,12 @@ export default function CertificatesPage() {
               value={genCn}
               onChange={(e) => setGenCn(e.target.value)}
               placeholder="e.g. John Smith"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Organization
             </label>
             <input
@@ -294,7 +294,7 @@ export default function CertificatesPage() {
               value={genOrg}
               onChange={(e) => setGenOrg(e.target.value)}
               placeholder="e.g. Acme Corp"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
 
