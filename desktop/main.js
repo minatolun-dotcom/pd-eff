@@ -58,57 +58,7 @@ function createSplash() {
     webPreferences: { nodeIntegration: false },
   });
 
-  splashWindow.loadURL(`data:text/html,
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-          display: flex; justify-content: center; align-items: center;
-          height: 100vh;
-          background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-          color: white;
-          border-radius: 16px;
-          overflow: hidden;
-        }
-        .container { text-align: center; }
-        .logo { font-size: 48px; margin-bottom: 16px; animation: pulse 2s ease-in-out infinite; }
-        h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; letter-spacing: -0.5px; }
-        p { font-size: 13px; color: #a0aec0; margin-bottom: 24px; }
-        .spinner {
-          width: 32px; height: 32px; border: 3px solid rgba(255,255,255,0.15);
-          border-top-color: #60a5fa; border-radius: 50%;
-          animation: spin 0.8s linear infinite; margin: 0 auto 12px;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
-        .status { font-size: 12px; color: #718096; transition: all 0.3s; }
-        .progress-bar {
-          width: 200px; height: 3px; background: rgba(255,255,255,0.1);
-          border-radius: 3px; margin: 16px auto 0; overflow: hidden;
-        }
-        .progress-fill {
-          height: 100%; background: linear-gradient(90deg, #60a5fa, #a78bfa);
-          border-radius: 3px; width: 0%; transition: width 0.5s ease;
-          animation: progress 3s ease-in-out infinite;
-        }
-        @keyframes progress { 0% { width: 0%; } 50% { width: 70%; } 100% { width: 95%; } }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="logo">🔐</div>
-        <h1>pd-eff</h1>
-        <p>PDF Digital Signing</p>
-        <div class="spinner"></div>
-        <div class="status" id="status">Starting...</div>
-        <div class="progress-bar"><div class="progress-fill"></div></div>
-      </div>
-    </body>
-    </html>
-  `);
+  splashWindow.loadFile(path.join(__dirname, 'splash.html'));
 }
 
 // ─── Port & Backend ───────────────────────────────────────────────────

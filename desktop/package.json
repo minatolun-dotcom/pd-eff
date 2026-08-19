@@ -37,7 +37,8 @@
       "main.js",
       "preload.js",
       "icon.*",
-      "updater.js"
+      "updater.js",
+      "splash.html"
     ],
     "extraResources": [
       {
@@ -64,7 +65,9 @@
     "protocols": [
       {
         "name": "pd-eff PDF Signing",
-        "schemes": ["pd-eff"]
+        "schemes": [
+          "pd-eff"
+        ]
       }
     ],
     "fileAssociations": [
@@ -78,9 +81,24 @@
     ],
     "linux": {
       "target": [
-        { "target": "AppImage", "arch": ["x64"] },
-        { "target": "deb", "arch": ["x64"] },
-        { "target": "rpm", "arch": ["x64"] }
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "rpm",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "icon": "icons",
       "category": "Office",
@@ -92,7 +110,9 @@
         "MimeType": "application/pdf;",
         "StartupWMClass": "pd-eff"
       },
-      "mimeTypes": ["application/pdf"]
+      "mimeTypes": [
+        "application/pdf"
+      ]
     },
     "deb": {
       "depends": [
@@ -128,8 +148,18 @@
     },
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] },
-        { "target": "portable", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "icon": "icon.ico",
       "artifactName": "pd-eff-setup-${version}-win-x64.${ext}"
@@ -141,7 +171,6 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "pd-eff",
-
       "unicode": true
     },
     "portable": {
@@ -149,7 +178,7 @@
     }
   },
   "devDependencies": {
-    "electron": "^28.0.0",
+    "electron": "^28.3.3",
     "electron-builder": "^24.0.0"
   },
   "dependencies": {
