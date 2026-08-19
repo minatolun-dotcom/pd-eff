@@ -82,7 +82,7 @@ export default function CertificatesPage() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className="h-full overflow-y-auto p-6 max-w-4xl mx-auto">
       <div className="mb-8">
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Certificates</h2>
         <p className="text-gray-600 dark:text-gray-400 dark:text-gray-500">

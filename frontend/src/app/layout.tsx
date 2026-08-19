@@ -17,51 +17,48 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body>
         <ThemeProvider>
-          <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] transition-colors duration-300">
-            {/* Header */}
-            <header className="sticky top-0 z-50 backdrop-blur-xl bg-white/80 dark:bg-gray-950/80 border-b border-gray-200/60 dark:border-gray-800/60 transition-colors duration-300">
-              <div className="max-w-6xl mx-auto px-4 sm:px-6">
-                <div className="flex items-center justify-between h-16">
-                  {/* Logo */}
-                  <a href="/" className="flex items-center gap-3 group">
-                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-lg shadow-md shadow-blue-500/20 group-hover:shadow-lg group-hover:shadow-blue-500/30 transition-all">
-                      🔐
-                    </div>
-                    <div>
-                      <span className="font-bold text-gray-900 dark:text-white text-lg tracking-tight">pd-eff</span>
-                      <span className="hidden sm:inline text-xs text-gray-400 dark:text-gray-500 ml-2 font-medium">PDF Signing</span>
-                    </div>
-                  </a>
+          <div className="flex h-screen bg-[var(--background)] text-[var(--foreground)] transition-colors duration-300 overflow-hidden">
+            {/* ─── Sidebar ──────────────────────────────────────── */}
+            <aside className="w-16 lg:w-56 shrink-0 bg-white dark:bg-gray-950 border-r border-gray-200/60 dark:border-gray-800/60 flex flex-col transition-colors duration-300 z-40">
+              {/* Logo */}
+              <a href="/" className="flex items-center gap-3 px-4 h-14 border-b border-gray-200/60 dark:border-gray-800/60 shrink-0 group">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-lg shadow-md shadow-blue-500/20 group-hover:shadow-lg group-hover:shadow-blue-500/30 transition-all shrink-0">
+                  🔐
+                </div>
+                <span className="hidden lg:inline font-bold text-gray-900 dark:text-white text-lg tracking-tight">pd-eff</span>
+              </a>
 
-                  {/* Navigation */}
-                  <nav className="flex items-center gap-1 bg-gray-100/80 dark:bg-gray-800/80 rounded-2xl p-1">
-                    <a
-                      href="/"
-                      className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-xl transition-all hover:bg-white dark:hover:bg-gray-700 hover:shadow-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
-                    >
-                      <span>📝</span>
-                      <span className="hidden sm:inline">Sign</span>
-                    </a>
-                    <a
-                      href="/verify"
-                      className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-xl transition-all hover:bg-white dark:hover:bg-gray-700 hover:shadow-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
-                    >
-                      <span>✅</span>
-                      <span className="hidden sm:inline">Verify</span>
-                    </a>
-                  </nav>
+              {/* Navigation */}
+              <nav className="flex-1 py-3 px-2 space-y-1">
+                <a href="/" className="nav-item group" title="Sign PDF">
+                  <span className="nav-icon">📝</span>
+                  <span className="hidden lg:inline nav-label">Sign</span>
+                </a>
+                <a href="/verify" className="nav-item group" title="Verify Signatures">
+                  <span className="nav-icon">✅</span>
+                  <span className="hidden lg:inline nav-label">Verify</span>
+                </a>
+                <a href="/certificates" className="nav-item group" title="Certificates">
+                  <span className="nav-icon">📜</span>
+                  <span className="hidden lg:inline nav-label">Certificates</span>
+                </a>
+                <a href="/audit" className="nav-item group" title="Audit Log">
+                  <span className="nav-icon">📋</span>
+                  <span className="hidden lg:inline nav-label">Audit Log</span>
+                </a>
+              </nav>
 
-                  {/* Right: Theme toggle + Version */}
-                  <div className="flex items-center gap-2">
-                    <ThemeToggle />
-                    <span className="hidden md:inline text-xs text-gray-400 dark:text-gray-600 bg-gray-100 dark:bg-gray-800 px-2.5 py-1 rounded-full font-medium">v1.2.0</span>
-                  </div>
+              {/* Bottom actions */}
+              <div className="py-3 px-2 border-t border-gray-200/60 dark:border-gray-800/60 space-y-1">
+                <ThemeToggle />
+                <div className="hidden lg:flex items-center justify-center py-2">
+                  <span className="text-[10px] text-gray-400 dark:text-gray-600 font-medium">v1.4.4</span>
                 </div>
               </div>
-            </header>
+            </aside>
 
-            {/* Main content */}
-            <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 animate-fadeIn">
+            {/* ─── Main Content ─────────────────────────────────── */}
+            <main className="flex-1 overflow-y-auto animate-fadeIn">
               {children}
             </main>
           </div>

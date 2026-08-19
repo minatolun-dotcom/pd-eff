@@ -259,8 +259,56 @@ body {
 .dark ::-webkit-scrollbar-thumb { background: #334155; }
 .dark ::-webkit-scrollbar-thumb:hover { background: #475569; }
 
+/* ─── Sidebar Navigation ────────────────────────── */
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--muted);
+  transition: all 0.2s ease;
+  text-decoration: none;
+  position: relative;
+}
+.nav-item:hover {
+  background: var(--surface-hover);
+  color: var(--foreground);
+}
+.nav-item.active,
+.nav-item[aria-current="page"] {
+  background: var(--primary-light);
+  color: var(--primary);
+}
+.nav-icon {
+  font-size: 18px;
+  width: 24px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.nav-label {
+  white-space: nowrap;
+}
+
 /* ─── Selection ──────────────────────────────────── */
 ::selection {
   background: rgba(37, 99, 235, 0.2);
   color: inherit;
+}
+
+/* ─── Desktop Panels ─────────────────────────────── */
+.panel-split {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 0;
+  height: calc(100vh - 0px);
+}
+
+@media (max-width: 1024px) {
+  .panel-split {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
 }

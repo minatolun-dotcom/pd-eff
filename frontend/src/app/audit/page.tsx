@@ -88,7 +88,7 @@ export default function AuditPage() {
 
   if (loading) {
     return (
-      <div className="max-w-4xl mx-auto">
+      <div className="h-full overflow-y-auto p-6 max-w-4xl mx-auto">
         <div className="animate-pulse space-y-4">
           <div className="h-8 bg-gray-200 rounded w-1/3" />
           <div className="grid grid-cols-4 gap-4">
@@ -102,7 +102,7 @@ export default function AuditPage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className="h-full overflow-y-auto p-6 max-w-4xl mx-auto">
       <div className="mb-8">
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">📊 Audit Dashboard</h2>
         <p className="text-gray-600 dark:text-gray-400 dark:text-gray-500">
