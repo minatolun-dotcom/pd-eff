@@ -343,7 +343,22 @@ jobs:
           png = create_png(512, 512, 0x0f, 0x34, 0x60)
           with open('icon.png', 'wb') as f:
               f.write(png)
-          print('Icons generated')
+          # Create icon.ico from embedded PNGs
+          sizes = [16, 32, 48, 64, 128, 256]
+          pngs = []
+          for s in sizes:
+              pngs.append(create_png(s, s, 0x0f, 0x34, 0x60))
+          ico_header = struct.pack('<HHH', 0, 1, len(sizes))
+          entries = b''
+          data_offset = 6 + len(sizes) * 16
+          for i, (s, p) in enumerate(zip(sizes, pngs)):
+              w = 0 if s == 256 else s
+              h = 0 if s == 256 else s
+              entries += struct.pack('<BBBBHHII', w, h, 0, 0, 1, 32, len(p), data_offset)
+              data_offset += len(p)
+          with open('icon.ico', 'wb') as f:
+              f.write(ico_header + entries + b''.join(pngs))
+          print('Icons and icon.ico generated')
           "
 
       - name: Build NSIS installer
