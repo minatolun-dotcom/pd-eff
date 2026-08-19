@@ -111,10 +111,7 @@
         "python3-venv"
       ],
       "compression": "xz",
-      "priority": "optional",
-      "fpm": [
-        "--deb-after-install=scripts/postinst"
-      ]
+      "priority": "optional"
     },
     "rpm": {
       "depends": [
@@ -148,15 +145,7 @@
       "installerIcon": "icon.ico",
       "uninstallerIcon": "icon.ico",
       "installerHeaderIcon": "icon.ico",
-      "unicode": true,
-      "fileAssociations": [
-        {
-          "ext": "pdf",
-          "name": "PDF Document",
-          "mimeType": "application/pdf",
-          "description": "PDF Document — Open with pd-eff to sign or verify"
-        }
-      ]
+      "unicode": true
     },
     "portable": {
       "artifactName": "pd-eff-${version}-win-x64-portable.${ext}"
