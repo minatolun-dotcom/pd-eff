@@ -51,7 +51,9 @@ export interface SignatureDetail {
     pem?: string;
   };
   timestamps: Record<string, string>;
-  details: Record<string, string>;
+  details: Record<string, any> & {
+    position?: { x1: number; y1: number; x2: number; y2: number } | null;
+  };
   errors: string[];
   certificates?: CertificateChain[];
 }
@@ -65,6 +67,7 @@ export interface VerificationResult {
   overall_status: string;
   verified_at: string;
   error?: string;
+  page_dimensions?: { width: number; height: number } | null;
 }
 
 // ─── Certificates ────────────────────────────────────────────────

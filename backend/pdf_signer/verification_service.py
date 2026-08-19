@@ -38,6 +38,7 @@ def verify_pdf(pdf_path: str, trust_roots: list = None, trusted_pems: list = Non
         "signatures": [],
         "overall_status": "NO_SIGNATURES",
         "verified_at": datetime.now(timezone.utc).isoformat(),
+        "page_dimensions": None,
     }
 
     try:
@@ -49,6 +50,18 @@ def verify_pdf(pdf_path: str, trust_roots: list = None, trusted_pems: list = Non
             if not sig_list:
                 results["overall_status"] = "NO_SIGNATURES"
                 return results
+
+            # Get page dimensions from first page
+            try:
+                root_pages = reader.root["/Pages"]
+                first_page = root_pages["/Kids"][0].get_object()
+                mb = first_page["/MediaBox"]
+                results["page_dimensions"] = {
+                    "width": float(mb[2]),
+                    "height": float(mb[3]),
+                }
+            except Exception:
+                pass
 
             # Build validation context
             if trusted_pems:
@@ -154,9 +167,10 @@ def _validate_single_signature(reader, sig_obj, vc) -> dict:
                 "reason": _safe_get(sig_dict, "/Reason", ""),
                 "location": _safe_get(sig_dict, "/Location", ""),
                 "contact_info": _safe_get(sig_dict, "/ContactInfo", ""),
+                "position": _get_signature_rect(sig_obj),
             }
         except Exception:
-            sig_info["details"] = {"field_name": field_name}
+            sig_info["details"] = {"field_name": field_name, "position": _get_signature_rect(sig_obj)}
 
     except Exception as e:
         err_str = str(e)
@@ -346,6 +360,7 @@ def _verify_pkcs7_sha1(reader, sig_obj, sig_info, vc) -> dict:
             "location": _safe_get(sig_dict, "/Location", ""),
             "hash_algorithm": "SHA-1",
             "verified_method": "manual SHA-1 hash comparison",
+            "position": _get_signature_rect(sig_obj),
         }
 
     except Exception as e:
@@ -519,6 +534,43 @@ def _build_vc_from_pems(pem_list: list[str]) -> ValidationContext:
             logger.warning(f"Could not parse PEM: {e}")
 
     return ValidationContext(trust_roots=trust_roots)
+
+
+def _get_signature_rect(sig_obj) -> dict | None:
+    """Extract the signature field's rectangle position from the PDF.
+    
+    Returns dict with x1, y1, x2, y2 in PDF points (72/inch),
+    with y-axis flipped to match screen coordinates (top-left origin).
+    """
+    try:
+        # Try sig_field first (most reliable)
+        if hasattr(sig_obj, 'sig_field') and sig_obj.sig_field:
+            sf = sig_obj.sig_field
+            if hasattr(sf, 'get_object'):
+                obj = sf.get_object()
+                rect = obj.get('/Rect')
+                if rect and len(rect) == 4:
+                    # PDF coords: [x1, y_bottom, x2, y_top] (y=0 at bottom)
+                    # We return raw PDF coords; frontend will flip y
+                    return {
+                        "x1": float(rect[0]),
+                        "y1": float(rect[1]),
+                        "x2": float(rect[2]),
+                        "y2": float(rect[3]),
+                    }
+        # Fallback: try sig_object directly
+        sig_dict = sig_obj.sig_object
+        rect = sig_dict.get('/Rect')
+        if rect and len(rect) == 4:
+            return {
+                "x1": float(rect[0]),
+                "y1": float(rect[1]),
+                "x2": float(rect[2]),
+                "y2": float(rect[3]),
+            }
+    except Exception:
+        pass
+    return None
 
 
 def _safe_get(d, key, default=""):

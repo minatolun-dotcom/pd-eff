@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import {
   verifyPdf,
   VerificationResult,
@@ -225,28 +225,7 @@ export default function VerifyPage() {
             {result.is_valid ? "✓ VERIFIED" : hasUntrusted ? "⚠ UNTRUSTED" : "✗ INVALID"}
           </div>
         </div>
-        <div className="flex-1 relative">
-          <iframe
-            src={file ? URL.createObjectURL(file) : ""}
-            className="w-full h-full border-0"
-            title="PDF Preview"
-          />
-          {/* Floating badge */}
-          <div className="absolute top-4 right-4 animate-bounceIn">
-            <div className={`flex flex-col items-center gap-1 px-3 py-2 rounded-xl shadow-xl backdrop-blur-sm ${
-              result.is_valid ? "bg-green-500/90 text-white"
-                : hasUntrusted ? "bg-amber-500/90 text-white"
-                : "bg-red-500/90 text-white"
-            }`}>
-              <div className="text-2xl font-bold">
-                {result.is_valid ? "✓" : hasUntrusted ? "⚠" : "✗"}
-              </div>
-              <div className="text-[10px] font-bold tracking-wide">
-                {result.is_valid ? "SIGNATURE VALID" : hasUntrusted ? "UNTRUSTED" : "INVALID"}
-              </div>
-            </div>
-          </div>
-        </div>
+        <PdfPreviewWithTicks result={result} file={file} hasUntrusted={hasUntrusted} />
       </div>
 
       {/* ─── Right Panel: Results ──────────────────────── */}
@@ -436,6 +415,105 @@ export default function VerifyPage() {
         </div>
       </div>
 
+    </div>
+  );
+}
+
+function PdfPreviewWithTicks({ result, file, hasUntrusted }: { result: VerificationResult; file: File | null; hasUntrusted: boolean | undefined }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerSize, setContainerSize] = useState({ w: 0, h: 0 });
+  const pageDim = result.page_dimensions;
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const obs = new ResizeObserver((entries) => {
+      const { width, height } = entries[0].contentRect;
+      setContainerSize({ w: width, h: height });
+    });
+    obs.observe(containerRef.current);
+    return () => obs.disconnect();
+  }, []);
+
+  // Calculate scale to fit PDF page in container (object-fit: contain logic)
+  let scale = 1;
+  let offsetX = 0;
+  let offsetY = 0;
+  if (pageDim && containerSize.w > 0 && containerSize.h > 0) {
+    const scaleX = containerSize.w / pageDim.width;
+    const scaleY = containerSize.h / pageDim.height;
+    scale = Math.min(scaleX, scaleY);
+    const renderedW = pageDim.width * scale;
+    const renderedH = pageDim.height * scale;
+    offsetX = (containerSize.w - renderedW) / 2;
+    offsetY = (containerSize.h - renderedH) / 2;
+  }
+
+  return (
+    <div ref={containerRef} className="flex-1 relative bg-gray-100 dark:bg-gray-900">
+      <iframe
+        src={file ? URL.createObjectURL(file) : ""}
+        className="w-full h-full border-0"
+        title="PDF Preview"
+      />
+
+      {/* Signature tick badges */}
+      {result.signatures.map((sig, i) => {
+        const pos = sig.details?.position;
+        if (!pos || !pageDim || containerSize.w === 0) return null;
+
+        // PDF coords: y=0 at bottom. Screen: y=0 at top.
+        const screenX = offsetX + pos.x1 * scale;
+        const screenY = offsetY + (pageDim.height - pos.y2) * scale;
+        const tickW = (pos.x2 - pos.x1) * scale;
+        const tickH = (pos.y2 - pos.y1) * scale;
+
+        const isValid = sig.intact && sig.trust_status === "VALID";
+        const isUntrustedSig = sig.intact && !isValid;
+
+        return (
+          <div
+            key={i}
+            className="absolute pointer-events-none"
+            style={{
+              left: `${screenX}px`,
+              top: `${screenY}px`,
+              width: `${tickW}px`,
+              height: `${tickH}px`,
+            }}
+          >
+            {/* Green/amber/red tick icon at top-right of signature area */}
+            <div className={`absolute -top-3 -right-3 w-7 h-7 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-lg animate-bounceIn z-10 ${
+              isValid ? "bg-green-500 shadow-green-500/40"
+                : isUntrustedSig ? "bg-amber-400 shadow-amber-400/40"
+                : "bg-red-500 shadow-red-500/40"
+            }`}>
+              {isValid ? "✓" : isUntrustedSig ? "⚠" : "✗"}
+            </div>
+            {/* Subtle border around signature area */}
+            <div className={`w-full h-full rounded border-2 ${
+              isValid ? "border-green-400/50"
+                : isUntrustedSig ? "border-amber-400/50"
+                : "border-red-400/50"
+            }`} />
+          </div>
+        );
+      })}
+
+      {/* Overall status badge */}
+      <div className="absolute top-4 right-4 animate-bounceIn">
+        <div className={`flex flex-col items-center gap-1 px-3 py-2 rounded-xl shadow-xl backdrop-blur-sm ${
+          result.is_valid ? "bg-green-500/90 text-white"
+            : hasUntrusted ? "bg-amber-500/90 text-white"
+            : "bg-red-500/90 text-white"
+        }`}>
+          <div className="text-2xl font-bold">
+            {result.is_valid ? "✓" : hasUntrusted ? "⚠" : "✗"}
+          </div>
+          <div className="text-[10px] font-bold tracking-wide">
+            {result.is_valid ? "SIGNATURE VALID" : hasUntrusted ? "UNTRUSTED" : "INVALID"}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
