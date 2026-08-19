@@ -61,6 +61,24 @@ class VerificationRecord(Base):
     verified_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class TrustedCertificate(Base):
+    """Certificate in the user's trust store."""
+    __tablename__ = "trusted_certificates"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String(255), nullable=False)  # User-friendly name
+    subject_cn = Column(String(255), nullable=True)
+    subject_o = Column(String(255), nullable=True)
+    issuer_cn = Column(String(255), nullable=True)
+    serial_number = Column(String(255), nullable=True)
+    not_valid_before = Column(DateTime, nullable=True)
+    not_valid_after = Column(DateTime, nullable=True)
+    is_self_signed = Column(Integer, default=0)
+    pem_data = Column(Text, nullable=False)  # PEM-encoded certificate
+    purpose = Column(String(50), default="signing")  # signing, root, intermediate
+    added_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 # Engine and session
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

@@ -25,6 +25,15 @@ export interface SigningRecord {
   download_url: string;
 }
 
+export interface CertificateChain {
+  subject_cn: string;
+  subject_full: string;
+  issuer_cn: string;
+  issuer_full: string;
+  serial_number: string;
+  is_self_signed: boolean;
+}
+
 export interface SignatureDetail {
   field_name: string;
   intact: boolean;
@@ -39,10 +48,12 @@ export interface SignatureDetail {
     valid_from: string | null;
     valid_to: string | null;
     self_signed: boolean;
+    pem?: string;
   };
   timestamps: Record<string, string>;
   details: Record<string, string>;
   errors: string[];
+  certificates?: CertificateChain[];
 }
 
 export interface VerificationResult {
@@ -226,6 +237,99 @@ export async function verifyPdf(file: File): Promise<VerificationResult> {
   if (!res.ok) {
     const err = await res.json();
     throw new Error(err.detail || "Failed to verify PDF");
+  }
+  return res.json();
+}
+
+// ─── Trust Store ────────────────────────────────────────────────
+
+export interface TrustedCert {
+  id: string;
+  name: string;
+  subject_cn: string;
+  subject_o: string;
+  issuer_cn: string;
+  serial_number: string;
+  not_valid_before: string | null;
+  not_valid_after: string | null;
+  is_self_signed: boolean;
+  purpose: string;
+  added_at: string | null;
+}
+
+export interface ExtractResult {
+  id: string;
+  name: string;
+  subject_cn: string;
+  total_certs: number;
+  all_certs: Array<{ index: number; cn: string; issuer: string }>;
+  message: string;
+}
+
+export async function listTrustStore(): Promise<TrustedCert[]> {
+  const res = await fetch(`${API_BASE}/trust-store`);
+  if (!res.ok) throw new Error("Failed to fetch trust store");
+  return res.json();
+}
+
+export async function addToTrustStore(name: string, pemData: string, purpose: string = "signing"): Promise<ExtractResult> {
+  const form = new FormData();
+  form.append("name", name);
+  form.append("pem_data", pemData);
+  form.append("purpose", purpose);
+
+  const res = await fetch(`${API_BASE}/trust-store`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.detail || "Failed to add to trust store");
+  }
+  return res.json();
+}
+
+export async function removeFromTrustStore(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/trust-store/${id}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error("Failed to remove from trust store");
+}
+
+export async function extractAndTrust(
+  file: File,
+  certIndex: number,
+  name: string,
+  purpose: string = "signing"
+): Promise<ExtractResult> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("certificate_index", String(certIndex));
+  form.append("name", name);
+  form.append("purpose", purpose);
+
+  const res = await fetch(`${API_BASE}/trust-store/extract`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.detail || "Failed to extract and trust");
+  }
+  return res.json();
+}
+
+export async function verifyWithTrustStore(file: File): Promise<VerificationResult & { trusted_store_used: number }> {
+  const form = new FormData();
+  form.append("file", file);
+
+  const res = await fetch(`${API_BASE}/verify/trusted`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.detail || "Failed to verify with trust store");
   }
   return res.json();
 }

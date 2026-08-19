@@ -15,11 +15,12 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
-from .database import init_db, get_db, Certificate, SigningRecord, VerificationRecord
+from .database import init_db, get_db, Certificate, SigningRecord, VerificationRecord, TrustedCertificate
 from .config import UPLOADS_DIR, CERTS_DIR, SIGNED_DIR, MAX_UPLOAD_SIZE, ALLOWED_PDF_EXTENSIONS, ALLOWED_CERT_EXTENSIONS
 from .cert_utils import parse_pkcs12, generate_self_signed_cert
 from .signing_service import sign_pdf, get_signature_positions, get_timestamp_servers, encrypt_pdf, get_pdf_info
 from .verification_service import verify_pdf
+from .trust_store import extract_certs_from_pdf
 
 
 # Create app
@@ -399,9 +400,13 @@ async def verify_pdf_endpoint(
     with open(pdf_path, "wb") as f:
         f.write(content)
 
-    # Verify
+    # Get trusted PEMs from store (auto-use if available)
+    trusted_certs = db.query(TrustedCertificate).all()
+    trusted_pems = [c.pem_data for c in trusted_certs if c.pem_data]
+
+    # Verify (with trust store if available)
     try:
-        result = verify_pdf(str(pdf_path))
+        result = verify_pdf(str(pdf_path), trusted_pems=trusted_pems if trusted_pems else None)
     except Exception as e:
         raise HTTPException(500, f"Verification failed: {str(e)}")
 
@@ -436,6 +441,244 @@ def list_verification_records(db: Session = Depends(get_db)):
         }
         for r in records
     ]
+
+
+# ─── Trust Store Management ────────────────────────────────────
+
+@app.get("/api/trust-store")
+def list_trusted_certificates(db: Session = Depends(get_db)):
+    """List all certificates in the trust store."""
+    certs = db.query(TrustedCertificate).order_by(TrustedCertificate.added_at.desc()).all()
+    return [
+        {
+            "id": c.id,
+            "name": c.name,
+            "subject_cn": c.subject_cn,
+            "subject_o": c.subject_o,
+            "issuer_cn": c.issuer_cn,
+            "serial_number": c.serial_number,
+            "not_valid_before": c.not_valid_before.isoformat() if c.not_valid_before else None,
+            "not_valid_after": c.not_valid_after.isoformat() if c.not_valid_after else None,
+            "is_self_signed": bool(c.is_self_signed),
+            "purpose": c.purpose,
+            "added_at": c.added_at.isoformat() if c.added_at else None,
+        }
+        for c in certs
+    ]
+
+
+@app.post("/api/trust-store")
+def add_to_trust_store(
+    name: str = Form(...),
+    pem_data: str = Form(...),
+    purpose: str = Form("signing"),
+    db: Session = Depends(get_db),
+):
+    """Add a certificate to the trust store."""
+    from cryptography import x509 as pyca_x509
+    from cryptography.hazmat.primitives import serialization
+
+    try:
+        # Parse PEM to extract info
+        pem_bytes = pem_data.encode("ascii") if isinstance(pem_data, str) else pem_data
+        cert = pyca_x509.load_pem_x509_certificate(pem_bytes)
+
+        # Check if already trusted by serial number
+        serial = str(cert.serial_number)
+        existing = db.query(TrustedCertificate).filter(TrustedCertificate.serial_number == serial).first()
+        if existing:
+            raise HTTPException(409, f"Certificate already trusted: {existing.name}")
+
+        # Extract subject info
+        cn = ""
+        org = ""
+        for attr in cert.subject:
+            if attr.oid.dotted_string == "2.5.4.3":
+                cn = attr.value
+            elif attr.oid.dotted_string == "2.5.4.10":
+                org = attr.value
+
+        issuer_cn = ""
+        for attr in cert.issuer:
+            if attr.oid.dotted_string == "2.5.4.3":
+                issuer_cn = attr.value
+                break
+
+        trusted = TrustedCertificate(
+            name=name,
+            subject_cn=cn,
+            subject_o=org,
+            issuer_cn=issuer_cn,
+            serial_number=serial,
+            not_valid_before=cert.not_valid_before_utc.replace(tzinfo=None),
+            not_valid_after=cert.not_valid_after_utc.replace(tzinfo=None),
+            is_self_signed=1 if cert.issuer == cert.subject else 0,
+            pem_data=pem_bytes.decode("ascii"),
+            purpose=purpose,
+        )
+        db.add(trusted)
+        db.commit()
+
+        return {
+            "id": trusted.id,
+            "name": trusted.name,
+            "subject_cn": cn,
+            "issuer_cn": issuer_cn,
+            "serial_number": serial,
+            "message": f"Certificate '{name}' added to trust store",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(400, f"Invalid certificate: {str(e)}")
+
+
+@app.delete("/api/trust-store/{cert_id}")
+def remove_from_trust_store(cert_id: str, db: Session = Depends(get_db)):
+    """Remove a certificate from the trust store."""
+    cert = db.query(TrustedCertificate).filter(TrustedCertificate.id == cert_id).first()
+    if not cert:
+        raise HTTPException(404, "Certificate not found in trust store")
+    db.delete(cert)
+    db.commit()
+    return {"message": f"Certificate '{cert.name}' removed from trust store"}
+
+
+@app.post("/api/trust-store/extract")
+async def extract_and_trust(
+    file: UploadFile = File(...),
+    certificate_index: int = Form(0),
+    name: str = Form(""),
+    purpose: str = Form("signing"),
+    db: Session = Depends(get_db),
+):
+    """Extract certificates from a signed PDF and add one to the trust store."""
+    ext = Path(file.filename).suffix.lower()
+    if ext not in ALLOWED_PDF_EXTENSIONS:
+        raise HTTPException(400, "Only PDF files are accepted")
+
+    content = await file.read()
+    if len(content) == 0:
+        raise HTTPException(400, "Empty file")
+
+    # Save temporarily
+    pdf_id = str(uuid.uuid4())
+    pdf_path = UPLOADS_DIR / f"extract_{pdf_id}_{file.filename}"
+    with open(pdf_path, "wb") as f:
+        f.write(content)
+
+    try:
+        certs = extract_certs_from_pdf(str(pdf_path))
+        if not certs:
+            raise HTTPException(400, "No certificates found in this PDF")
+
+        if certificate_index >= len(certs):
+            raise HTTPException(400, f"Certificate index {certificate_index} out of range (found {len(certs)})")
+
+        target_cert = certs[certificate_index]
+        cert_name = name or target_cert.get("subject_cn", "Unknown") or f"Certificate {certificate_index}"
+
+        # Check if already trusted
+        serial = target_cert.get("serial_number", "")
+        existing = db.query(TrustedCertificate).filter(TrustedCertificate.serial_number == serial).first()
+        if existing:
+            raise HTTPException(409, f"Certificate already trusted: {existing.name}")
+
+        # Parse dates
+        try:
+            from datetime import datetime as dt
+            not_before = dt.fromisoformat(target_cert["not_valid_before"].replace("+00:00", "")) if target_cert.get("not_valid_before") else None
+            not_after = dt.fromisoformat(target_cert["not_valid_after"].replace("+00:00", "")) if target_cert.get("not_valid_after") else None
+        except Exception:
+            not_before = None
+            not_after = None
+
+        trusted = TrustedCertificate(
+            name=cert_name,
+            subject_cn=target_cert.get("subject_cn", ""),
+            subject_o=target_cert.get("subject_o", ""),
+            issuer_cn=target_cert.get("issuer_cn", ""),
+            serial_number=serial,
+            not_valid_before=not_before,
+            not_valid_after=not_after,
+            is_self_signed=1 if target_cert.get("is_self_signed") else 0,
+            pem_data=target_cert.get("pem", ""),
+            purpose=purpose,
+        )
+        db.add(trusted)
+        db.commit()
+
+        return {
+            "id": trusted.id,
+            "name": cert_name,
+            "subject_cn": target_cert.get("subject_cn", ""),
+            "issuer_cn": target_cert.get("issuer_cn", ""),
+            "serial_number": serial,
+            "total_certs": len(certs),
+            "all_certs": [
+                {"index": i, "cn": c.get("subject_cn", ""), "issuer": c.get("issuer_cn", "")}
+                for i, c in enumerate(certs)
+            ],
+            "message": f"Certificate '{cert_name}' added to trust store",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Failed to extract certificates: {str(e)}")
+    finally:
+        # Cleanup
+        try:
+            os.remove(pdf_path)
+        except Exception:
+            pass
+
+
+@app.post("/api/verify/trusted")
+async def verify_with_trust_store(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    """Verify a PDF using certificates from the trust store."""
+    ext = Path(file.filename).suffix.lower()
+    if ext not in ALLOWED_PDF_EXTENSIONS:
+        raise HTTPException(400, "Only PDF files are accepted")
+
+    content = await file.read()
+    if len(content) > MAX_UPLOAD_SIZE:
+        raise HTTPException(413, f"File too large. Max: {MAX_UPLOAD_SIZE // 1024 // 1024}MB")
+    if len(content) == 0:
+        raise HTTPException(400, "Empty file")
+
+    verify_id = str(uuid.uuid4())
+    pdf_path = UPLOADS_DIR / f"verify_{verify_id}_{file.filename}"
+    with open(pdf_path, "wb") as f:
+        f.write(content)
+
+    # Get trusted PEMs from store
+    trusted_certs = db.query(TrustedCertificate).all()
+    trusted_pems = [c.pem_data for c in trusted_certs if c.pem_data]
+
+    try:
+        result = verify_pdf(str(pdf_path), trusted_pems=trusted_pems)
+    except Exception as e:
+        raise HTTPException(500, f"Verification failed: {str(e)}")
+
+    # Record verification
+    record = VerificationRecord(
+        filename=file.filename,
+        file_path=str(pdf_path),
+        is_valid=1 if result["is_valid"] else 0,
+        signature_count=result["signature_count"],
+        validation_details=json.dumps(result, default=str),
+    )
+    db.add(record)
+    db.commit()
+
+    return {
+        "id": record.id,
+        "trusted_store_used": len(trusted_pems),
+        **result,
+    }
 
 
 # ─── PDF Info & Encryption ──────────────────────────────────────
