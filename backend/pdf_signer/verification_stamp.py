@@ -228,13 +228,20 @@ def _replace_widgets(pdf, page_obj, signatures):
         time_str = _format_time(signing_time)
 
         # Compact widget appearance — black text, no border, green check
+        ck_x2, ck_y2 = 8, h / 2 + 1
         content = f"""q
-0 0 0 rg /F1 8 Tf
-2 {h-10} Td ({safe(status_text)}) Tj
+BT
+0 0 0 rg
+/F1 8 Tf
+1 0 0 1 2 {h-10} Tm ({safe(status_text)}) Tj
+/F1 6 Tf
+1 0 0 1 34 {h/2+2} Tm ({safe(signer_name[:20])}) Tj
+ET
+0.13 0.55 0.13 RG
 0.13 0.55 0.13 rg
-18 {h/2+2} m 22 {h/2-4} l 30 {h/2+6} l S
-0 0 0 rg /F1 6 Tf
-34 {h/2+2} Td ({safe(signer_name[:20])}) Tj
+1.5 w
+{ck_x2} {ck_y2} m {ck_x2+3} {ck_y2-4} l {ck_x2+11} {ck_y2+4} l S
+{ck_x2+5.5} {ck_y2-0.5} 8 0 360 arc S
 Q"""
 
         resources = pikepdf.Dictionary({
@@ -298,21 +305,28 @@ def _draw_stamps(pdf, page_obj, signatures, page_width, page_height, text_blocks
         ck_x = stamp_w - 30
         ck_y = stamp_h / 2 + 5
 
+        # Use Tm (absolute positioning) for each line to avoid overlap
+        y_title = stamp_h - 14
+        y_signed = y_title - 16
+        y_date = y_signed - 13
+        y_reason = y_date - 12
+        y_location = y_reason - 12
+
         stamp_ops = f"""BT
 0 0 0 rg
 /F2 13 Tf
-0 {stamp_h - 16} Td ({safe(status_text)}) Tj
-/F1 8 Td
-0 -14 Td (Digitally signed by {safe(signer_name[:30])}) Tj"""
+1 0 0 1 0 {y_title} Tm ({safe(status_text)}) Tj
+/F1 8 Tf
+1 0 0 1 0 {y_signed} Tm (Digitally signed by {safe(signer_name[:30])}) Tj"""
         if time_str:
             stamp_ops += f"""
-0 -11 Td (Date: {safe(time_str)}) Tj"""
+1 0 0 1 0 {y_date} Tm (Date: {safe(time_str)}) Tj"""
         if reason:
             stamp_ops += f"""
-0 -10 Td (Reason: {safe(reason[:30])}) Tj"""
+1 0 0 1 0 {y_reason} Tm (Reason: {safe(reason[:30])}) Tj"""
         if location:
             stamp_ops += f"""
-0 -10 Td (Location: {safe(location[:30])}) Tj"""
+1 0 0 1 0 {y_location} Tm (Location: {safe(location[:30])}) Tj"""
         stamp_ops += f"""
 ET
 0.13 0.55 0.13 RG
