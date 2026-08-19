@@ -73,8 +73,7 @@
         "name": "PDF Document",
         "mimeType": "application/pdf",
         "description": "PDF Document — Open with pd-eff to sign or verify",
-        "role": "Editor",
-        "icon": "icons/icon"
+        "role": "Editor"
       }
     ],
     "linux": {
@@ -142,9 +141,9 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "pd-eff",
-      "installerIcon": "icon.ico",
-      "uninstallerIcon": "icon.ico",
-      "installerHeaderIcon": "icon.ico",
+      "installerIcon": "icon",
+      "uninstallerIcon": "icon",
+      "installerHeaderIcon": "icon",
       "unicode": true
     },
     "portable": {
