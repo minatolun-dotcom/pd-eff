@@ -1,6 +1,6 @@
 {
   "name": "pd-eff",
-  "version": "1.1.0",
+  "version": "1.3.0",
   "description": "pd-eff — PDF Digital Signing with USB Key Support",
   "main": "main.js",
   "author": {
@@ -61,6 +61,22 @@
     "asarUnpack": [
       "extraResources/**/*"
     ],
+    "protocols": [
+      {
+        "name": "pd-eff PDF Signing",
+        "schemes": ["pd-eff"]
+      }
+    ],
+    "fileAssociations": [
+      {
+        "ext": "pdf",
+        "name": "PDF Document",
+        "mimeType": "application/pdf",
+        "description": "PDF Document — Open with pd-eff to sign or verify",
+        "role": "Editor",
+        "icon": "icons/icon"
+      }
+    ],
     "linux": {
       "target": [
         { "target": "AppImage", "arch": ["x64"] },
@@ -74,7 +90,8 @@
         "Name": "pd-eff",
         "Comment": "PDF Digital Signing",
         "Categories": "Office;Utility;Security;",
-        "MimeType": "application/pdf;"
+        "MimeType": "application/pdf;",
+        "StartupWMClass": "pd-eff"
       },
       "mimeTypes": ["application/pdf"]
     },
@@ -94,7 +111,10 @@
         "python3-venv"
       ],
       "compression": "xz",
-      "priority": "optional"
+      "priority": "optional",
+      "fpm": [
+        "--deb-after-install=scripts/postinst"
+      ]
     },
     "rpm": {
       "depends": [
@@ -128,7 +148,15 @@
       "installerIcon": "icon.ico",
       "uninstallerIcon": "icon.ico",
       "installerHeaderIcon": "icon.ico",
-      "unicode": true
+      "unicode": true,
+      "fileAssociations": [
+        {
+          "ext": "pdf",
+          "name": "PDF Document",
+          "mimeType": "application/pdf",
+          "description": "PDF Document — Open with pd-eff to sign or verify"
+        }
+      ]
     },
     "portable": {
       "artifactName": "pd-eff-${version}-win-x64-portable.${ext}"
