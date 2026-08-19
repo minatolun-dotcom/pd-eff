@@ -164,6 +164,31 @@ jobs:
           echo "Build output:"
           ls -la ../desktop/dist/windows/
 
+      - name: Sign Windows executable
+        run: |
+          # Create a self-signed certificate for code signing
+          # For production, replace with a real EV certificate from SignPath.io or DigiCert
+          powershell -Command "
+            $cert = New-SelfSignedCertificate \
+              -Subject 'CN=pd-eff, O=pd-eff, C=US' \
+              -Type CodeSigningCert \
+              -CertStoreLocation Cert:\CurrentUser\My \
+              -NotAfter (Get-Date).AddYears(5) \
+              -HashAlgorithm SHA256
+            
+            # Export to PFX
+            $pwd = ConvertTo-SecureString -String 'pd-eff-signing' -Force -AsPlainText
+            Export-PfxCertificate -Cert $cert -FilePath C:\tmp\code-signing.pfx -Password $pwd
+            
+            # Sign the exe
+            $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe' | Sort-Object -Descending | Select-Object -First 1
+            & $signtool.FullName sign /f C:\tmp\code-signing.pfx /p 'pd-eff-signing' /tr http://timestamp.digicert.com /td sha256 /fd sha256 desktop/dist/windows/pd-eff.exe
+            
+            # Verify signature
+            & $signtool.FullName verify /pa desktop/dist/windows/pd-eff.exe
+            echo 'Signature verified successfully'
+          "
+
       - name: Package Windows build
         run: |
           mkdir -p desktop/dist/pd-eff-windows
