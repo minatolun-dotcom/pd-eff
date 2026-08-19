@@ -333,3 +333,52 @@ export async function verifyWithTrustStore(file: File): Promise<VerificationResu
   }
   return res.json();
 }
+
+export interface BulkExtractResult {
+  total_found: number;
+  added: number;
+  skipped: number;
+  certificates: Array<{ cn: string; serial: string }>;
+  skipped_details: Array<{ cn: string; serial: string; reason: string }>;
+  message: string;
+}
+
+export async function extractAndTrustBulk(file: File, purpose: string = "signing"): Promise<BulkExtractResult> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("purpose", purpose);
+
+  const res = await fetch(`${API_BASE}/trust-store/extract-bulk`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.detail || "Failed to extract certificates");
+  }
+  return res.json();
+}
+
+export interface CaBundleResult {
+  bundle: string;
+  added: number;
+  skipped: number;
+  certificates: string[];
+  skipped_details: string[];
+  message: string;
+}
+
+export async function loadCaBundle(bundle: string = "india"): Promise<CaBundleResult> {
+  const form = new FormData();
+  form.append("bundle", bundle);
+
+  const res = await fetch(`${API_BASE}/trust-store/bundle`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.detail || "Failed to load CA bundle");
+  }
+  return res.json();
+}

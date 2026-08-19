@@ -634,6 +634,141 @@ async def extract_and_trust(
             pass
 
 
+@app.post("/api/trust-store/extract-bulk")
+async def extract_and_trust_bulk(
+    file: UploadFile = File(...),
+    purpose: str = Form("signing"),
+    db: Session = Depends(get_db),
+):
+    """Extract ALL unique certificates from a signed PDF and add them to the trust store."""
+    ext = Path(file.filename).suffix.lower()
+    if ext not in ALLOWED_PDF_EXTENSIONS:
+        raise HTTPException(400, "Only PDF files are accepted")
+
+    content = await file.read()
+    if len(content) == 0:
+        raise HTTPException(400, "Empty file")
+
+    pdf_id = str(uuid.uuid4())
+    pdf_path = UPLOADS_DIR / f"bulk_extract_{pdf_id}_{file.filename}"
+    with open(pdf_path, "wb") as f:
+        f.write(content)
+
+    try:
+        certs = extract_certs_from_pdf(str(pdf_path))
+        if not certs:
+            raise HTTPException(400, "No certificates found in this PDF")
+
+        added = []
+        skipped = []
+        for cert_info in certs:
+            serial = cert_info.get("serial_number", "")
+            if not serial:
+                continue
+            existing = db.query(TrustedCertificate).filter(TrustedCertificate.serial_number == serial).first()
+            if existing:
+                skipped.append({"cn": cert_info.get("subject_cn", ""), "serial": serial, "reason": "already_trusted"})
+                continue
+
+            try:
+                from datetime import datetime as dt
+                not_before = dt.fromisoformat(cert_info["not_valid_before"].replace("+00:00", "")) if cert_info.get("not_valid_before") else None
+                not_after = dt.fromisoformat(cert_info["not_valid_after"].replace("+00:00", "")) if cert_info.get("not_valid_after") else None
+            except Exception:
+                not_before = None
+                not_after = None
+
+            cn = cert_info.get("subject_cn", "") or f"Certificate"
+            trusted = TrustedCertificate(
+                name=cn,
+                subject_cn=cert_info.get("subject_cn", ""),
+                subject_o=cert_info.get("subject_o", ""),
+                issuer_cn=cert_info.get("issuer_cn", ""),
+                serial_number=serial,
+                not_valid_before=not_before,
+                not_valid_after=not_after,
+                is_self_signed=1 if cert_info.get("is_self_signed") else 0,
+                pem_data=cert_info.get("pem", ""),
+                purpose=purpose,
+            )
+            db.add(trusted)
+            added.append({"cn": cn, "serial": serial})
+
+        db.commit()
+        return {
+            "total_found": len(certs),
+            "added": len(added),
+            "skipped": len(skipped),
+            "certificates": added,
+            "skipped_details": skipped,
+            "message": f"Added {len(added)} certificates to trust store ({len(skipped)} already trusted)",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Failed to extract certificates: {str(e)}")
+    finally:
+        try:
+            os.remove(pdf_path)
+        except Exception:
+            pass
+
+
+@app.post("/api/trust-store/bundle")
+def load_ca_bundle(
+    bundle: str = Form("india"),
+    db: Session = Depends(get_db),
+):
+    """Load a pre-bundled set of trusted root certificates."""
+    from .trust_store import CA_BUNDLES
+
+    if bundle not in CA_BUNDLES:
+        raise HTTPException(400, f"Unknown bundle: {bundle}. Available: {list(CA_BUNDLES.keys())}")
+
+    certs_data = CA_BUNDLES[bundle]
+    added = []
+    skipped = []
+
+    for cert_info in certs_data:
+        serial = cert_info.get("serial_number", "")
+        if not serial:
+            continue
+        existing = db.query(TrustedCertificate).filter(TrustedCertificate.serial_number == serial).first()
+        if existing:
+            skipped.append(cert_info["name"])
+            continue
+
+        trusted = TrustedCertificate(
+            name=cert_info["name"],
+            subject_cn=cert_info.get("subject_cn", ""),
+            subject_o=cert_info.get("subject_o", ""),
+            issuer_cn=cert_info.get("issuer_cn", ""),
+            serial_number=serial,
+            is_self_signed=1,
+            pem_data=cert_info.get("pem", ""),
+            purpose="signing",
+        )
+        db.add(trusted)
+        added.append(cert_info["name"])
+
+    db.commit()
+    return {
+        "bundle": bundle,
+        "added": len(added),
+        "skipped": len(skipped),
+        "certificates": added,
+        "skipped_details": skipped,
+        "message": f"Loaded {len(added)} root certificates from '{bundle}' bundle ({len(skipped)} already trusted)",
+    }
+
+
+@app.get("/api/trust-store/bundles")
+def list_ca_bundles():
+    """List available CA certificate bundles."""
+    from .trust_store import CA_BUNDLES
+    return {"bundles": list(CA_BUNDLES.keys())}
+
+
 @app.post("/api/verify/trusted")
 async def verify_with_trust_store(
     file: UploadFile = File(...),

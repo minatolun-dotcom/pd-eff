@@ -8,7 +8,9 @@ import {
   listTrustStore,
   TrustedCert,
   extractAndTrust,
+  extractAndTrustBulk,
   removeFromTrustStore,
+  loadCaBundle,
 } from "@/lib/api";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -28,6 +30,8 @@ export default function VerifyPage() {
   const [showTrustStore, setShowTrustStore] = useState(false);
   const [trusting, setTrusting] = useState<number | null>(null);
   const [trustMessage, setTrustMessage] = useState("");
+  const [bulkTrusting, setBulkTrusting] = useState(false);
+  const [loadingBundle, setLoadingBundle] = useState(false);
 
   const handleFileSelect = useCallback((f: File) => {
     if (f && f.type === "application/pdf") {
@@ -108,6 +112,47 @@ export default function VerifyPage() {
       }
     } catch (err: any) {
       setTrustMessage(`⚠ ${err.message}`);
+    }
+  };
+
+  const handleBulkTrust = async () => {
+    if (!file) return;
+    setBulkTrusting(true);
+    setTrustMessage("");
+    try {
+      const res = await extractAndTrustBulk(file);
+      setTrustMessage(`✓ ${res.message}`);
+      const store = await listTrustStore();
+      setTrustStore(store);
+      // Re-verify
+      if (file) {
+        const newResult = await verifyPdf(file);
+        setResult(newResult);
+      }
+    } catch (err: any) {
+      setTrustMessage(`⚠ ${err.message}`);
+    } finally {
+      setBulkTrusting(false);
+    }
+  };
+
+  const handleLoadCaBundle = async (bundle: string) => {
+    setLoadingBundle(true);
+    setTrustMessage("");
+    try {
+      const res = await loadCaBundle(bundle);
+      setTrustMessage(`✓ ${res.message}`);
+      const store = await listTrustStore();
+      setTrustStore(store);
+      // Re-verify if file loaded
+      if (file) {
+        const newResult = await verifyPdf(file);
+        setResult(newResult);
+      }
+    } catch (err: any) {
+      setTrustMessage(`⚠ ${err.message}`);
+    } finally {
+      setLoadingBundle(false);
     }
   };
 
@@ -342,9 +387,7 @@ export default function VerifyPage() {
                       ))}
                     </div>
                   </div>
-                )}
-
-                {/* Trust action */}
+                )}                {/* Trust action */}
                 {isUntrusted && (
                   <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/50 rounded-xl p-4">
                     <div className="flex items-center justify-between">
@@ -356,17 +399,27 @@ export default function VerifyPage() {
                           Trust this signer to validate this and future signatures
                         </p>
                       </div>
-                      <button
-                        onClick={() => handleTrustCertificate(i, sig)}
-                        disabled={trusting === i}
-                        className="btn btn-primary btn-sm shrink-0"
-                      >
-                        {trusting === i ? (
-                          <><span className="animate-spin">⏳</span> Trusting...</>
-                        ) : (
-                          "🔐 Trust this signer"
-                        )}
-                      </button>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={handleBulkTrust}
+                          disabled={bulkTrusting}
+                          className="btn btn-outline btn-sm"
+                        >
+                          {bulkTrusting ? "⏳" : "🔗 Trust Chain"}
+                        </button>
+                        <button
+                          onClick={() => handleTrustCertificate(i, sig)}
+                          disabled={trusting === i}
+                          className="btn btn-primary btn-sm"
+                        >
+                          {trusting === i ? (
+                            <><span className="animate-spin">⏳</span> Trusting...</>
+                          ) : (
+                            "🔐 Trust Signer"
+                          )}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -404,9 +457,29 @@ export default function VerifyPage() {
 
             {showTrustStore && (
               <div className="border-t border-gray-200 dark:border-gray-700 p-4 space-y-3 animate-slideUp">
+                {/* Quick actions */}
+                <div className="flex gap-2 flex-wrap">
+                  {file && hasUntrusted && (
+                    <button
+                      onClick={handleBulkTrust}
+                      disabled={bulkTrusting}
+                      className="btn btn-primary btn-sm"
+                    >
+                      {bulkTrusting ? (<>⏳ Trusting...</>) : "🔗 Trust Full Chain"}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleLoadCaBundle("india")}
+                    disabled={loadingBundle}
+                    className="btn btn-outline btn-sm"
+                  >
+                    {loadingBundle ? (<>⏳ Loading...</>) : "🇮🇳 Load India CA Roots"}
+                  </button>
+                </div>
+
                 {trustStore.length === 0 ? (
                   <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
-                    No certificates in trust store. Click "Trust this signer" on an untrusted signature above.
+                    No certificates in trust store. Click "Trust this signer" or load a CA bundle above.
                   </p>
                 ) : (
                   <div className="space-y-2">
