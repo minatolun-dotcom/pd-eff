@@ -141,9 +141,7 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "pd-eff",
-      "installerIcon": "icon",
-      "uninstallerIcon": "icon",
-      "installerHeaderIcon": "icon",
+
       "unicode": true
     },
     "portable": {
