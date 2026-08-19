@@ -1,9 +1,7 @@
-"""Verification stamp service — replaces 'Signature Not Verified' stamps.
+"""Verification stamp service — draws stamps directly on page content stream.
 
-Approach:
-1. Replace widget annotation appearance (renders in Acrobat & most viewers)
-2. Draw matching stamps on page content stream (fallback for browser viewers)
-3. Position stamps to avoid overlapping QR codes and other content
+Uses raw PDF content stream operators (BT/ET with Tf/Td) instead of Form XObjects,
+for maximum compatibility with all PDF viewers.
 """
 import re
 import uuid
@@ -13,7 +11,7 @@ from .config import SIGNED_DIR
 
 
 def stamp_verification_result(pdf_path: str, verification_result: dict, page: int = 0) -> str:
-    """Create Acrobat-style verification stamps in the PDF."""
+    """Create verification stamps in the PDF."""
     output_path = _get_output_path(pdf_path, "verified")
     signatures = verification_result.get("signatures", [])
     is_valid = verification_result.get("is_valid", False)
@@ -29,16 +27,11 @@ def stamp_verification_result(pdf_path: str, verification_result: dict, page: in
         page_width = float(mb[2]) if mb else 612
         page_height = float(mb[3]) if mb else 792
 
-        _ensure_resources(page_obj)
-
         # ── Step 1: Replace widget annotation appearances ────────────
-        _replace_widget_appearances(pdf, page_obj, signatures)
+        _replace_widgets(pdf, page_obj, signatures)
 
         # ── Step 2: Draw stamps on page content stream ──────────────
-        _draw_page_stamps(pdf, page_obj, signatures, page_width, page_height)
-
-        # ── Step 3: Add verification badge ──────────────────────────
-        _add_verification_badge(pdf, page_obj, page_width, page_height, is_valid, verification_result)
+        _draw_stamps(pdf, page_obj, signatures, page_width, page_height, is_valid, verification_result)
 
         pdf.save(output_path)
         pdf.close()
@@ -50,12 +43,8 @@ def stamp_verification_result(pdf_path: str, verification_result: dict, page: in
     return output_path
 
 
-# ═══════════════════════════════════════════════════════════════════
-# Step 1: Replace widget annotation appearances
-# ═══════════════════════════════════════════════════════════════════
-
-def _replace_widget_appearances(pdf, page_obj, signatures):
-    """Replace /Sig widget annotation appearances with verified stamps."""
+def _replace_widgets(pdf, page_obj, signatures):
+    """Replace widget annotation appearances with verified stamps."""
     annots = page_obj.get("/Annots")
     if not annots:
         return
@@ -63,122 +52,89 @@ def _replace_widget_appearances(pdf, page_obj, signatures):
     for annot in annots:
         if not isinstance(annot, pikepdf.Dictionary):
             continue
-        if "/AP" not in annot:
+        if "/AP" not in annot or "/Rect" not in annot:
             continue
 
-        rect = annot.get("/Rect")
-        if not rect:
-            continue
-
+        rect = annot["/Rect"]
         rx1, ry1, rx2, ry2 = float(rect[0]), float(rect[1]), float(rect[2]), float(rect[3])
-        w = rx2 - rx1
-        h = ry2 - ry1
+        w, h = rx2 - rx1, ry2 - ry1
         if w < 10 or h < 10:
             continue
 
-        # Find matching signature
         sig = _find_sig_for_rect(rx1, ry1, rx2, ry2, signatures)
         signer_name = sig["signer"]["common_name"] if sig else "Unknown"
-        signer_org = sig["signer"].get("organization", "") if sig else ""
-        signer_title = sig["signer"].get("title", "") if sig else ""
         status, status_text = _get_status(sig)
-        reason = sig["details"].get("reason", "") if sig else ""
-        location = sig["details"].get("location", "") if sig else ""
         signing_time = sig.get("timestamps", {}).get("signing_time", "") if sig else ""
-        sub_filter = sig["details"].get("sub_filter", "") if sig else ""
 
-        # Create verified appearance
-        ap = annot["/AP"]
-        # The /N might be a Form XObject or a dict of states
-        new_ap = _create_verified_form(
-            pdf, w, h,
-            signer_name, signer_org, signer_title,
-            status, status_text,
-            reason, location, signing_time, sub_filter,
-        )
-        ap["/N"] = new_ap
+        def safe(s):
+            return str(s).replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")[:35] if s else ""
 
+        if status == "valid":
+            bg, bc, sc = "0.93 0.99 0.93", "0.18 0.68 0.18", "0.10 0.52 0.10"
+        elif status == "untrusted":
+            bg, bc, sc = "1.0 0.97 0.88", "0.85 0.65 0.13", "0.72 0.52 0.05"
+        else:
+            bg, bc, sc = "1.0 0.93 0.93", "0.86 0.15 0.15", "0.72 0.10 0.10"
 
-def _create_verified_form(pdf, w, h, signer_name, signer_org, signer_title,
-                          status, status_text, reason, location, signing_time, sub_filter):
-    """Create a Form XObject with verified stamp content."""
-    def safe(s):
-        return str(s).replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")[:40] if s else ""
+        # Build compact appearance content stream
+        cx, cy = 6, h / 2 + 1
+        time_str = ""
+        if signing_time and signing_time != "Unknown":
+            ts = str(signing_time)[:20]
+            if "D:" in ts:
+                try:
+                    parts = ts.replace("D:", "").split("+")[0]
+                    time_str = f"{parts[:4]}.{parts[4:6]}.{parts[6:8]}"
+                except Exception:
+                    time_str = ts
 
-    if status == "valid":
-        bg, bc, sc = "0.93 0.99 0.93", "0.18 0.68 0.18", "0.10 0.52 0.10"
-    elif status == "untrusted":
-        bg, bc, sc = "1.0 0.97 0.88", "0.85 0.65 0.13", "0.72 0.52 0.05"
-    else:
-        bg, bc, sc = "1.0 0.93 0.93", "0.86 0.15 0.15", "0.72 0.10 0.10"
+        content = f"""q
+{bg} rg {bc} RG 1 w
+0 0 {w} {h} re B
+{sc} RG 2 w
+{cx} {cy} m {cx+3} {cy-4} l {cx+11} {cy+4} l S
+{cx+5.5} {cy-0.5} 8 0 360 arc S
+0.45 0.45 0.45 rg /F1 7 Tf 18 {h-10} Td (Signed by :) Tj
+0 0 0 rg /F1B 8 Tf 0 -8 Td ({safe(signer_name[:25])}) Tj
+{sc} rg /F1B 7 Tf 0 -9 Td ({safe(status_text + '  |  ' + time_str[:20])}) Tj
+Q"""
 
-    # Compact layout for small widget rects
-    lines = [
-        "q",
-        f"{bg} rg", f"{bc} RG", "1 w",
-        f"0 0 {w} {h} re B",
-    ]
-
-    # Checkmark
-    cx, cy = 6, h / 2 + 1
-    lines.extend([f"{sc} RG", "2 w",
-        f"{cx} {cy} m {cx+3} {cy-4} l {cx+11} {cy+4} l S",
-        f"{cx+5.5} {cy-0.5} 8 0 360 arc S",
-    ])
-
-    # Text
-    lines.extend([
-        "0.45 0.45 0.45 rg", "/F1 7 Tf", f"18 {h-10} Td (Signed by :) Tj",
-        "0 0 0 rg", "/F1B 8 Tf", f"0 -8 Td ({safe(signer_name[:25])}) Tj",
-    ])
-
-    time_str = signing_time[:20] if signing_time and signing_time != "Unknown" else ""
-    if "D:" in str(time_str):
-        try:
-            parts = str(time_str).replace("D:", "").split("+")[0]
-            time_str = f"{parts[:4]}.{parts[4:6]}.{parts[6:8]}"
-        except Exception:
-            pass
-    lines.extend([
-        f"{sc} rg", "/F1B 7 Tf",
-        f"0 -9 Td ({safe(status_text + '  |  ' + str(time_str)[:20])}) Tj",
-    ])
-
-    lines.append("Q")
-
-    resources = pikepdf.Dictionary({
-        "/Font": pikepdf.Dictionary({
-            "/F1": pikepdf.Dictionary({
-                "/Type": pikepdf.Name("/Font"),
-                "/Subtype": pikepdf.Name("/Type1"),
-                "/BaseFont": pikepdf.Name("/Helvetica"),
-            }),
-            "/F1B": pikepdf.Dictionary({
-                "/Type": pikepdf.Name("/Font"),
-                "/Subtype": pikepdf.Name("/Type1"),
-                "/BaseFont": pikepdf.Name("/Helvetica-Bold"),
-            }),
+        resources = pikepdf.Dictionary({
+            "/Font": pikepdf.Dictionary({
+                "/F1": pikepdf.Dictionary({
+                    "/Type": pikepdf.Name("/Font"),
+                    "/Subtype": pikepdf.Name("/Type1"),
+                    "/BaseFont": pikepdf.Name("/Helvetica"),
+                }),
+                "/F1B": pikepdf.Dictionary({
+                    "/Type": pikepdf.Name("/Font"),
+                    "/Subtype": pikepdf.Name("/Type1"),
+                    "/BaseFont": pikepdf.Name("/Helvetica-Bold"),
+                }),
+            })
         })
-    })
 
-    stream = pikepdf.Stream(pdf, "\n".join(lines).encode("latin-1"))
-    return pikepdf.Dictionary({
-        "/Type": pikepdf.Name("/XObject"),
-        "/Subtype": pikepdf.Name("/Form"),
-        "/BBox": pikepdf.Array([0, 0, w, h]),
-        "/Resources": resources,
-        "/Stream": stream,
-    })
+        stream = pikepdf.Stream(pdf, content.encode("latin-1"))
+        form = pikepdf.Dictionary({
+            "/Type": pikepdf.Name("/XObject"),
+            "/Subtype": pikepdf.Name("/Form"),
+            "/BBox": pikepdf.Array([0, 0, w, h]),
+            "/Resources": resources,
+            "/Stream": stream,
+        })
+
+        annot["/AP"]["/N"] = form
 
 
-# ═══════════════════════════════════════════════════════════════════
-# Step 2: Draw stamps on page content stream (for browser viewers)
-# ═══════════════════════════════════════════════════════════════════
-
-def _draw_page_stamps(pdf, page_obj, signatures, page_width, page_height):
+def _draw_stamps(pdf, page_obj, signatures, page_width, page_height, is_valid, verification_result):
     """Draw verification stamps directly on the page content stream."""
+    # Ensure Resources/XObject exists
+    if "/Resources" not in page_obj:
+        page_obj["/Resources"] = pikepdf.Dictionary()
+    if "/XObject" not in page_obj["/Resources"]:
+        page_obj["/Resources"]["/XObject"] = pikepdf.Dictionary()
+
     widget_rects = _get_widget_rects(page_obj)
-    occupied = set()  # Track occupied regions to avoid overlap
 
     for i, sig in enumerate(signatures):
         pos = sig.get("details", {}).get("position")
@@ -192,43 +148,92 @@ def _draw_page_stamps(pdf, page_obj, signatures, page_width, page_height):
         sub_filter = sig.get("details", {}).get("sub_filter", "")
         status, status_text = _get_status(sig)
 
-        # Find the widget rect for this signature
+        # Find widget rect for positioning
         widget_rect = _find_widget_for_sig(pos, widget_rects) if pos else None
 
-        # ── Position calculation ────────────────────────────────────
-        # Place stamp ABOVE the widget/signature, in clear space
+        # ── Position: above widget, in clear space ──────────────────
+        sw, sh = 240, 100
         if widget_rect:
             wx, wy, ww, wh = widget_rect
-            # Place above the widget
-            sw, sh = 230, 95
-            sx = wx - (sw - ww) / 2  # Center above widget
-            sy = wy + wh + 5  # Just above widget
-            # Ensure stays on page
+            sx = max(5, min(wx - (sw - ww) / 2, page_width - sw - 5))
+            sy = wy + wh + 8  # Above widget
             if sy + sh > page_height - 5:
-                sy = wy - sh - 5  # Place below if no room above
-            sx = max(5, min(sx, page_width - sw - 5))
-            sy = max(5, sy)
+                sy = wy - sh - 8  # Below if no room
         elif pos:
-            px = float(pos["x1"])
-            py = float(pos["y1"])
-            sw, sh = 230, 95
-            sx = px
-            sy = py - sh - 10
+            sx = max(5, min(float(pos["x1"]), page_width - sw - 5))
+            sy = float(pos["y1"]) - sh - 10
             if sy < 5:
                 sy = float(pos["y2"]) + 10
-            sx = max(5, min(sx, page_width - sw - 5))
         else:
-            sw, sh = 230, 95
             sx = page_width - sw - 15
-            sy = 45  # Above the badge
+            sy = 50  # Above badge
 
-        # ── Build stamp content ─────────────────────────────────────
-        content = _build_stamp_content(
-            sw, sh,
-            signer_name, signer_org, signer_title,
-            status, status_text,
-            reason, location, signing_time, sub_filter,
-        )
+        # ── Build stamp as Form XObject ─────────────────────────────
+        def safe(s):
+            return str(s).replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")[:40] if s else ""
+
+        if status == "valid":
+            bg, bc, sc = "0.93 0.99 0.93", "0.18 0.68 0.18", "0.10 0.52 0.10"
+        elif status == "untrusted":
+            bg, bc, sc = "1.0 0.97 0.88", "0.85 0.65 0.13", "0.72 0.52 0.05"
+        else:
+            bg, bc, sc = "1.0 0.93 0.93", "0.86 0.15 0.15", "0.72 0.10 0.10"
+
+        time_str = ""
+        if signing_time and signing_time != "Unknown":
+            ts = str(signing_time)[:35]
+            if "D:" in ts:
+                try:
+                    parts = ts.replace("D:", "").split("+")[0]
+                    time_str = f"{parts[:4]}.{parts[4:6]}.{parts[6:8]} {parts[8:10]}:{parts[10:12]}:{parts[12:14]}"
+                except Exception:
+                    time_str = ts
+            else:
+                time_str = ts[:25]
+
+        # Checkmark coordinates
+        ck_x, ck_y = sw - 28, sh - 28
+
+        if status == "valid":
+            check_op = (
+                f"{ck_x} {ck_y} m {ck_x+5} {ck_y-7} l {ck_x+15} {ck_y+5} l S "
+                f"{ck_x+7.5} {ck_y-1} 10 0 360 arc S"
+            )
+        elif status == "untrusted":
+            check_op = f"20 Tf {ck_x-2} {ck_y-6} Td (?) Tj 10 Tf"
+        else:
+            check_op = (
+                f"{ck_x} {ck_y+5} m {ck_x+14} {ck_y-8} l S "
+                f"{ck_x+14} {ck_y+5} m {ck_x} {ck_y-8} l S"
+            )
+
+        org_line = ""
+        if signer_org:
+            org_line = signer_org[:35]
+        if signer_title:
+            org_line += f" , {signer_title}" if org_line else signer_title[:35]
+
+        content = f"""q
+{bg} rg {bc} RG 1.5 w
+0 0 {sw} {sh} re B
+0.45 0.45 0.45 rg /F1 9 Tf
+10 {sh-16} Td (Signed by :) Tj
+0 0 0 rg /F1B 11 Tf
+0 -15 Td ({safe(signer_name[:35])}) Tj"""
+        if org_line:
+            content += f"\n/F1 8 Tf 0 -12 Td ({safe(org_line[:40])}) Tj"
+        content += f"""
+{sc} rg /F1B 10 Tf 0 -8 Td ({safe(status_text)}) Tj
+{sc} RG {sc} rg 2.5 w
+{check_op}
+0 0 0 rg /F1 7 Tf"""
+        if time_str:
+            content += f"\n0 -10 Td (Date: {safe(time_str)}) Tj"
+        if reason:
+            content += f"\n0 -10 Td (Reason: {safe(reason[:30])}) Tj"
+        if location:
+            content += f"\n0 -10 Td (Location: {safe(location[:30])}) Tj"
+        content += "\nQ"
 
         resources = pikepdf.Dictionary({
             "/Font": pikepdf.Dictionary({
@@ -257,213 +262,63 @@ def _draw_page_stamps(pdf, page_obj, signatures, page_width, page_height):
         xobj_name = f"/Stamp{i}"
         page_obj["/Resources"]["/XObject"][xobj_name] = xobj
 
-        draw_op = f"q 1 0 0 1 {sx} {sy} cm {xobj_name} Do Q"
-        _append_to_contents(page_obj, pdf, draw_op)
+        # ── Draw stamp and badge using q...cm...Do...Q ──────────────
+        stamp_draw = f"q 1 0 0 1 {sx} {sy} cm {xobj_name} Do Q"
 
-
-def _find_old_stamp_area(page_obj, page_width, page_height):
-    """Find the area containing 'Signature Not Verified' or question mark."""
-    content = page_obj.get("/Contents")
-    if isinstance(content, pikepdf.Stream):
-        data = content.read_bytes().decode("latin-1", errors="replace")
-    elif isinstance(content, pikepdf.Array):
-        data = b""
-        for item in content:
-            if isinstance(item, pikepdf.Stream):
-                data += item.read_bytes() + b"\n"
-        data = data.decode("latin-1", errors="replace")
-    else:
-        return None
-
-    # Find images that are likely verification stamps (small, near bottom)
-    for m in re.finditer(r'q\s*([\d\.\-e\s]+)\s+cm\s+/(\w+)\s+Do\s+Q', data):
-        nums = [float(x) for x in m.group(1).split()]
-        if len(nums) < 6:
-            continue
-        x, y = nums[4], nums[5]
-        w, h = abs(nums[0]), abs(nums[3])
-
-        # Question mark images are typically 80-120px, near bottom
-        if 70 < w < 130 and 70 < h < 130 and y < page_height * 0.2:
-            # Check nearby for stamp text
-            after = data[m.end():m.end() + 1500]
-            texts = re.findall(r'\(([^)]+)\)', after)
-            combined = " ".join(texts).lower()
-            if any(kw in combined for kw in ["signature", "verified", "digitally", "not verified", "certificate"]):
-                return {
-                    "x1": x - 5,
-                    "y1": y - 5,
-                    "x2": x + max(w, 260),
-                    "y2": y + max(h, 90),
-                }
-
-    # Look for text blocks with "Not Verified"
-    for m in re.finditer(r'(\d+\.?\d*)\s+(\d+\.?\d*)\s+Tm', data):
-        tx, ty = float(m.group(1)), float(m.group(2))
-        after = data[m.end():m.end() + 600]
-        texts = re.findall(r'\(([^)]+)\)', after)
-        combined = " ".join(texts).lower()
-        if any(kw in combined for kw in ["not verified", "signature not"]):
-            return {
-                "x1": tx - 10,
-                "y1": ty - 10,
-                "x2": tx + 260,
-                "y2": ty + 90,
-            }
-
-    return None
-
-
-def _build_stamp_content(w, h, signer_name, signer_org, signer_title,
-                         status, status_text, reason, location, signing_time, sub_filter):
-    """Build PDF content stream for a verification stamp."""
-    def safe(s):
-        return str(s).replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")[:40] if s else ""
-
-    if status == "valid":
-        bg, bc, sc = "0.93 0.99 0.93", "0.18 0.68 0.18", "0.10 0.52 0.10"
-    elif status == "untrusted":
-        bg, bc, sc = "1.0 0.97 0.88", "0.85 0.65 0.13", "0.72 0.52 0.05"
-    else:
-        bg, bc, sc = "1.0 0.93 0.93", "0.86 0.15 0.15", "0.72 0.10 0.10"
-
-    lines = [
-        "q",
-        f"{bg} rg", f"{bc} RG", "1.5 w",
-        f"0 0 {w} {h} re B",
-        # Header
-        "0.45 0.45 0.45 rg", "/F1 9 Tf",
-        f"10 {h - 16} Td (Signed by :) Tj",
-        # Name
-        "0 0 0 rg", "/F1B 11 Tf",
-        f"0 -15 Td ({safe(signer_name[:35])}) Tj",
-    ]
-
-    # Org/title
-    org_line = ""
-    if signer_org:
-        org_line = signer_org[:35]
-    if signer_title:
-        org_line += f" , {signer_title}" if org_line else signer_title[:35]
-    if org_line:
-        lines.extend(["/F1 8 Tf", f"0 -12 Td ({safe(org_line[:40])}) Tj"])
-
-    # Status
-    lines.extend([
-        "0 -8 Td",
-        f"{sc} rg", "/F1B 10 Tf",
-        f"({safe(status_text)}) Tj",
-    ])
-
-    # Checkmark on right
-    cx = w - 28
-    cy = h - 28
-    lines.extend([f"{sc} RG", f"{sc} rg"])
-    if status == "valid":
-        lines.extend([
-            "2.5 w",
-            f"{cx} {cy} m {cx+5} {cy-7} l {cx+15} {cy+5} l S",
-            f"{cx+7.5} {cy-1} 10 0 360 arc S",
-        ])
-    elif status == "untrusted":
-        lines.extend(["/F1B 18 Tf", f"{cx-1} {cy-5} Td (?) Tj"])
-    else:
-        lines.extend([
-            "2.5 w",
-            f"{cx} {cy+5} m {cx+14} {cy-8} l S",
-            f"{cx+14} {cy+5} m {cx} {cy-8} l S",
-        ])
-
-    # Details
-    lines.extend(["0 0 0 rg", "/F1 7 Tf"])
-    if signing_time and signing_time != "Unknown":
-        time_str = str(signing_time)[:35]
-        if "D:" in time_str:
-            try:
-                parts = time_str.replace("D:", "").split("+")[0]
-                time_str = f"{parts[:4]}.{parts[4:6]}.{parts[6:8]} {parts[8:10]}:{parts[10:12]}:{parts[12:14]}"
-            except Exception:
-                pass
-        lines.append(f"0 -10 Td (Date: {safe(time_str)}) Tj")
-    if reason:
-        lines.append(f"0 -10 Td (Reason: {safe(reason[:30])}) Tj")
-    if location:
-        lines.append(f"0 -10 Td (Location: {safe(location[:30])}) Tj")
-
-    lines.append("Q")
-    return "\n".join(lines)
-
-
-# ═══════════════════════════════════════════════════════════════════
-# Step 3: Verification badge
-# ═══════════════════════════════════════════════════════════════════
-
-def _add_verification_badge(pdf, page_obj, page_width, page_height, is_valid, verification_result):
-    """Add verification badge at bottom-left."""
-    badge_w, badge_h = 180, 26
-    badge_x, badge_y = 15, 15
-
-    if is_valid:
-        bg, bc, tc = "0.85 0.95 0.85", "0.18 0.68 0.18", "0.10 0.52 0.10"
-        label = "Signature Verified"
-    else:
-        overall = verification_result.get("overall_status", "")
-        if overall == "NO_SIGNATURES":
-            bg, bc, tc = "0.95 0.95 0.85", "0.85 0.65 0.13", "0.72 0.52 0.05"
-            label = "No Signatures"
+        # Verification badge at bottom-left
+        badge_w, badge_h = 180, 26
+        badge_x, badge_y = 15, 15
+        if is_valid:
+            bg2, bc2, tc2 = "0.85 0.95 0.85", "0.18 0.68 0.18", "0.10 0.52 0.10"
+            label = "Signature Verified"
         else:
-            bg, bc, tc = "0.95 0.85 0.85", "0.86 0.15 0.15", "0.72 0.10 0.10"
-            label = "Verification Failed"
+            overall = verification_result.get("overall_status", "")
+            if overall == "NO_SIGNATURES":
+                bg2, bc2, tc2 = "0.95 0.95 0.85", "0.85 0.65 0.13", "0.72 0.52 0.05"
+                label = "No Signatures"
+            else:
+                bg2, bc2, tc2 = "0.95 0.85 0.85", "0.86 0.15 0.15", "0.72 0.10 0.10"
+                label = "Verification Failed"
+        sig_count = verification_result.get("signature_count", 0)
+        safe_label = label.replace("(", "\\(").replace(")", "\\)")
 
-    safe_label = label.replace("(", "\\(").replace(")", "\\)")
-    sig_count = verification_result.get("signature_count", 0)
-
-    content = f"""q
-{bg} rg {bc} RG 1 w
+        badge_content = f"""q
+{bg2} rg {bc2} RG 1 w
 0 0 {badge_w} {badge_h} re B
-{tc} rg
-/F1B 9 Tf 8 8 Td ({safe_label}) Tj
+{tc2} rg /F1B 9 Tf
+8 8 Td ({safe_label}) Tj
 /F1 7 Tf 0 -1 Td ({sig_count} signature(s) verified) Tj
 Q"""
 
-    resources = pikepdf.Dictionary({
-        "/Font": pikepdf.Dictionary({
-            "/F1": pikepdf.Dictionary({
-                "/Type": pikepdf.Name("/Font"),
-                "/Subtype": pikepdf.Name("/Type1"),
-                "/BaseFont": pikepdf.Name("/Helvetica"),
-            }),
-            "/F1B": pikepdf.Dictionary({
-                "/Type": pikepdf.Name("/Font"),
-                "/Subtype": pikepdf.Name("/Type1"),
-                "/BaseFont": pikepdf.Name("/Helvetica-Bold"),
-            }),
+        badge_resources = pikepdf.Dictionary({
+            "/Font": pikepdf.Dictionary({
+                "/F1": pikepdf.Dictionary({
+                    "/Type": pikepdf.Name("/Font"),
+                    "/Subtype": pikepdf.Name("/Type1"),
+                    "/BaseFont": pikepdf.Name("/Helvetica"),
+                }),
+                "/F1B": pikepdf.Dictionary({
+                    "/Type": pikepdf.Name("/Font"),
+                    "/Subtype": pikepdf.Name("/Type1"),
+                    "/BaseFont": pikepdf.Name("/Helvetica-Bold"),
+                }),
+            })
         })
-    })
 
-    stream = pikepdf.Stream(pdf, content.encode("latin-1"))
-    xobj = pikepdf.Dictionary({
-        "/Type": pikepdf.Name("/XObject"),
-        "/Subtype": pikepdf.Name("/Form"),
-        "/BBox": pikepdf.Array([0, 0, badge_w, badge_h]),
-        "/Resources": resources,
-        "/Stream": stream,
-    })
+        badge_stream = pikepdf.Stream(pdf, badge_content.encode("latin-1"))
+        badge_xobj = pikepdf.Dictionary({
+            "/Type": pikepdf.Name("/XObject"),
+            "/Subtype": pikepdf.Name("/Form"),
+            "/BBox": pikepdf.Array([0, 0, badge_w, badge_h]),
+            "/Resources": badge_resources,
+            "/Stream": badge_stream,
+        })
 
-    page_obj["/Resources"]["/XObject"]["/VerificationBadge"] = xobj
-    draw_op = f"q 1 0 0 1 {badge_x} {badge_y} cm /VerificationBadge Do Q"
-    _append_to_contents(page_obj, pdf, draw_op)
+        page_obj["/Resources"]["/XObject"]["/VerificationBadge"] = badge_xobj
+        badge_draw = f"q 1 0 0 1 {badge_x} {badge_y} cm /VerificationBadge Do Q"
 
-
-# ═══════════════════════════════════════════════════════════════════
-# Utilities
-# ═══════════════════════════════════════════════════════════════════
-
-def _ensure_resources(page_obj):
-    if "/Resources" not in page_obj:
-        page_obj["/Resources"] = pikepdf.Dictionary()
-    if "/XObject" not in page_obj["/Resources"]:
-        page_obj["/Resources"]["/XObject"] = pikepdf.Dictionary()
+        # ── Append to content stream ────────────────────────────────
+        _append_to_contents(page_obj, pdf, stamp_draw + "\n" + badge_draw)
 
 
 def _get_widget_rects(page_obj):
