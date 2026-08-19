@@ -14,7 +14,7 @@ import pikepdf
 from .config import SIGNED_DIR
 
 
-def stamp_verification_result(pdf_path: str, verification_result: dict, page: int = 0) -> str:
+def stamp_verification_result(pdf_path: str, verification_result: dict, page: int = 0, stamp_position: dict = None) -> str:
     """Create Acrobat-style verification stamps in the PDF."""
     output_path = _get_output_path(pdf_path, "verified")
     signatures = verification_result.get("signatures", [])
@@ -40,7 +40,7 @@ def stamp_verification_result(pdf_path: str, verification_result: dict, page: in
         image_blocks = _find_image_blocks(page_obj, page_width, page_height)
 
         # ── Draw stamps directly on content stream ──────────────────
-        _draw_stamps(pdf, page_obj, signatures, page_width, page_height, text_blocks, image_blocks)
+        _draw_stamps(pdf, page_obj, signatures, page_width, page_height, text_blocks, image_blocks, stamp_position)
 
         pdf.save(output_path)
         pdf.close()
@@ -257,7 +257,7 @@ Q"""
         })
 
 
-def _draw_stamps(pdf, page_obj, signatures, page_width, page_height, text_blocks, image_blocks):
+def _draw_stamps(pdf, page_obj, signatures, page_width, page_height, text_blocks, image_blocks, stamp_position=None):
     """Draw Acrobat-style verification stamps on the page content stream."""
     widget_rects = _get_widget_rects(page_obj)
 
@@ -283,8 +283,14 @@ def _draw_stamps(pdf, page_obj, signatures, page_width, page_height, text_blocks
         # Find widget rect for positioning
         widget_rect = _find_widget_for_sig(pos, widget_rects) if pos else None
 
-        # Smart positioning — avoid overlap with text/images
-        sx, sy = _find_stamp_position(widget_rect, text_blocks, image_blocks, stamp_w, stamp_h, page_width, page_height)
+        # Smart positioning — use override if provided, else auto-detect
+        if stamp_position and i == 0:  # Only first stamp uses user position
+            sx = max(5, min(stamp_position["x"], page_width - stamp_w - 5))
+            sy = max(5, min(stamp_position["y"], page_height - stamp_h - 5))
+            stamp_w = stamp_position.get("w", stamp_w)
+            stamp_h = stamp_position.get("h", stamp_h)
+        else:
+            sx, sy = _find_stamp_position(widget_rect, text_blocks, image_blocks, stamp_w, stamp_h, page_width, page_height)
 
         # ── Acrobat-style stamp ─────────────────────────────────────
         # No border, no background — just text and green checkmark

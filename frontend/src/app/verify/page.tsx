@@ -1,428 +1,302 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
-import {
-  verifyPdf,
-  VerificationResult,
-  SignatureDetail,
-  listTrustStore,
-  TrustedCert,
-  extractAndTrust,
-  extractAndTrustBulk,
-  removeFromTrustStore,
-  loadCaBundle,
-} from "@/lib/api";
+import React, { useState, useRef, useEffect, useCallback } from "react";
+import Link from "next/link";
+import { verifyPdf, VerificationResult } from "@/lib/api";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-
-type View = "upload" | "result";
 
 export default function VerifyPage() {
   const [file, setFile] = useState<File | null>(null);
   const [result, setResult] = useState<VerificationResult | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [isDragging, setIsDragging] = useState(false);
-  const [view, setView] = useState<View>("upload");
+  const [error, setError] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
 
-  const [trustStore, setTrustStore] = useState<TrustedCert[]>([]);
-  const [showTrustStore, setShowTrustStore] = useState(false);
-  const [trusting, setTrusting] = useState<number | null>(null);
-  const [trustMessage, setTrustMessage] = useState("");
-  const [bulkTrusting, setBulkTrusting] = useState(false);
-  const [loadingBundle, setLoadingBundle] = useState(false);
-
-  const handleFileSelect = useCallback((f: File) => {
-    if (f && f.type === "application/pdf") {
-      setFile(f);
-      setResult(null);
-      setError("");
-      setView("upload");
+  const handleFile = (f: File) => {
+    if (!f.name.toLowerCase().endsWith(".pdf")) {
+      setError("Only PDF files are accepted");
+      return;
     }
-  }, []);
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (f) handleFileSelect(f);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const f = e.dataTransfer.files[0];
-    if (f) handleFileSelect(f);
+    setFile(f);
+    setResult(null);
+    setError(null);
   };
 
   const handleVerify = async () => {
     if (!file) return;
     setLoading(true);
-    setError("");
+    setError(null);
     try {
       const res = await verifyPdf(file);
       setResult(res);
-      setView("result");
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || "Verification failed");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleTrustCertificate = async (sigIndex: number, cert: SignatureDetail) => {
-    if (!file) return;
-    setTrusting(sigIndex);
-    setTrustMessage("");
-    try {
-      const res = await extractAndTrust(file, sigIndex, cert.signer.common_name || `Signer ${sigIndex + 1}`, "signing");
-      setTrustMessage(`✓ Trusted: ${res.name}`);
-      const store = await listTrustStore();
-      setTrustStore(store);
-      const newResult = await verifyPdf(file);
-      setResult(newResult);
-    } catch (err: any) {
-      setTrustMessage(`⚠ ${err.message}`);
-    } finally {
-      setTrusting(null);
-    }
-  };
-
-  const handleRemoveTrust = async (id: string) => {
-    try {
-      await removeFromTrustStore(id);
-      const store = await listTrustStore();
-      setTrustStore(store);
-      if (file) { const newResult = await verifyPdf(file); setResult(newResult); }
-    } catch (err: any) {
-      setTrustMessage(`⚠ ${err.message}`);
-    }
-  };
-
-  const handleBulkTrust = async () => {
-    if (!file) return;
-    setBulkTrusting(true);
-    setTrustMessage("");
-    try {
-      const res = await extractAndTrustBulk(file);
-      setTrustMessage(`✓ ${res.message}`);
-      const store = await listTrustStore();
-      setTrustStore(store);
-      if (file) { const newResult = await verifyPdf(file); setResult(newResult); }
-    } catch (err: any) {
-      setTrustMessage(`⚠ ${err.message}`);
-    } finally {
-      setBulkTrusting(false);
-    }
-  };
-
-  const handleLoadCaBundle = async (bundle: string) => {
-    setLoadingBundle(true);
-    setTrustMessage("");
-    try {
-      const res = await loadCaBundle(bundle);
-      setTrustMessage(`✓ ${res.message}`);
-      const store = await listTrustStore();
-      setTrustStore(store);
-      if (file) { const newResult = await verifyPdf(file); setResult(newResult); }
-    } catch (err: any) {
-      setTrustMessage(`⚠ ${err.message}`);
-    } finally {
-      setLoadingBundle(false);
-    }
-  };
-
-  const loadTrustStore = async () => {
-    const store = await listTrustStore();
-    setTrustStore(store);
-    setShowTrustStore(!showTrustStore);
-  };
-
   const reset = () => {
     setFile(null);
     setResult(null);
-    setError("");
-    setView("upload");
-    setTrustMessage("");
+    setError(null);
   };
 
-  const hasUntrusted = result?.signatures?.some((s) => s.intact && s.trust_status !== "VALID");
+  const hasUntrusted = result?.signatures?.some(
+    (s) => s.intact && s.trust_status !== "VALID"
+  );
 
-  // ─── Upload Screen ───────────────────────────────────────────
-  if (!result) {
-    return (
-      <div className="h-full flex items-center justify-center p-8">
-        <div className="w-full max-w-2xl animate-fadeIn">
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Verify Signatures</h1>
-            <p className="text-gray-500 dark:text-gray-400 text-base">
+  // Stamp position state — shared between preview and export
+  const [stampPos, setStampPos] = useState<{x:number;y:number;w:number;h:number} | null>(null);
+
+  return (
+    <div className="flex h-full">
+      {/* Left panel - Results */}
+      <div className="w-[380px] shrink-0 border-r border-gray-200/60 dark:border-gray-800/60 flex flex-col overflow-y-auto">
+        <div className="p-4 space-y-4">
+          <div>
+            <h1 className="text-lg font-bold text-gray-900 dark:text-white">
+              Verify Signatures
+            </h1>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
               Upload a signed PDF to verify its digital signatures and integrity.
             </p>
           </div>
 
-          <div
-            className={`card p-10 transition-all duration-300 ${
-              isDragging ? "active border-blue-400 bg-blue-50/50 dark:bg-blue-900/20" : ""
-            }`}
-            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-            onDragLeave={() => setIsDragging(false)}
-            onDrop={handleDrop}
-          >
-            <label className="flex flex-col items-center justify-center w-full cursor-pointer group">
-              <div className="relative mb-5">
-                <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-green-50 to-emerald-100 dark:from-green-900/20 dark:to-emerald-900/20 flex items-center justify-center text-4xl group-hover:scale-110 transition-transform duration-300">
-                  🔍
-                </div>
+          {!result ? (
+            <>
+              {/* Upload area */}
+              <div
+                onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={(e) => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); }}
+                className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all ${
+                  dragOver
+                    ? "border-blue-500 bg-blue-50 dark:bg-blue-950/30"
+                    : "border-gray-300 dark:border-gray-700 hover:border-blue-400"
+                }`}
+                onClick={() => document.getElementById("verify-input")?.click()}
+              >
+                <input
+                  id="verify-input"
+                  type="file"
+                  accept=".pdf"
+                  className="hidden"
+                  onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
+                />
+                <div className="text-3xl mb-2">🔍</div>
+                <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                  {file ? file.name : "Drop PDF or click to browse"}
+                </p>
                 {file && (
-                  <div className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-green-500 text-white flex items-center justify-center text-sm shadow-lg animate-bounceIn">✓</div>
+                  <p className="text-[10px] text-gray-500 mt-1">
+                    {(file.size / 1024).toFixed(0)} KB · Ready to verify
+                  </p>
                 )}
               </div>
-              <p className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-1">
-                {file ? file.name : isDragging ? "Drop your PDF here" : "Drop a signed PDF here or click to upload"}
-              </p>
-              {file ? (
-                <p className="text-sm text-gray-400">{(file.size / 1024).toFixed(0)} KB · Ready to verify</p>
-              ) : (
-                <p className="text-sm text-gray-400">PDF files up to 50MB</p>
+
+              {error && (
+                <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-xl p-3">
+                  <p className="text-xs text-red-600 dark:text-red-400 font-medium">⚠️ {error}</p>
+                </div>
               )}
-              <input type="file" accept=".pdf" className="hidden" onChange={handleFileChange} />
-            </label>
-          </div>
 
-          {file && (
-            <div className="flex gap-3 mt-4">
-              <button onClick={handleVerify} disabled={loading} className="btn btn-success btn-lg flex-1">
-                {loading ? (<>⏳ Verifying...</>) : "✅ Verify Signatures"}
+              <button
+                onClick={handleVerify}
+                disabled={!file || loading}
+                className="w-full btn btn-primary text-sm"
+              >
+                {loading ? "⏳ Verifying..." : "✅ Verify Signatures"}
               </button>
-              <button onClick={reset} className="btn btn-outline btn-lg">Clear</button>
-            </div>
-          )}
-
-          {error && (
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 rounded-2xl p-5 text-red-700 text-sm animate-slideUp flex items-start gap-3 mt-4">
-              <span className="text-lg">⚠️</span>
-              <div><p className="font-semibold mb-1">Verification Failed</p><p>{error}</p></div>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // ─── Results Screen (PDF center, results right) ─────────────
-  return (
-    <div className="h-full flex">
-      {/* ─── Center: PDF Preview ──────────────────────── */}
-      <div className="flex-1 overflow-hidden bg-gray-100 dark:bg-gray-900 flex flex-col border-r border-gray-200/60 dark:border-gray-800/60">
-        <div className="flex items-center justify-between bg-white dark:bg-gray-950 px-4 py-2 border-b border-gray-200/60 dark:border-gray-800/60 shrink-0">
-          <div className="flex items-center gap-2">
-            <span className="text-sm">📄</span>
-            <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">PDF Preview</span>
-          </div>
-          <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
-            result.is_valid ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-              : hasUntrusted ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-              : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-          }`}>
-            {result.is_valid ? "✓ VERIFIED" : hasUntrusted ? "⚠ UNTRUSTED" : "✗ INVALID"}
-          </div>
-        </div>
-        <PdfPreviewWithTicks result={result} file={file} hasUntrusted={hasUntrusted} />
-      </div>
-
-      {/* ─── Right Panel: Results ──────────────────────── */}
-      <div className="w-[400px] shrink-0 overflow-y-auto bg-white dark:bg-gray-950">
-        <div className="p-5 space-y-4">
-          {/* Status banner */}
-          <div className={`rounded-xl p-4 text-center ${
-            result.is_valid
-              ? "bg-green-50 dark:bg-green-900/15"
-              : hasUntrusted
-              ? "bg-amber-50 dark:bg-amber-900/15"
-              : "bg-red-50 dark:bg-red-900/15"
-          }`}>
-            <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-2xl mx-auto mb-2 ${
-              result.is_valid ? "bg-green-500 text-white" : hasUntrusted ? "bg-amber-400 text-white" : "bg-red-500 text-white"
-            }`}>
-              {result.is_valid ? "✅" : hasUntrusted ? "⚠️" : "❌"}
-            </div>
-            <h2 className="text-sm font-bold text-gray-900 dark:text-white">
-              {result.is_valid ? "All Signatures Valid" : hasUntrusted ? "Signatures Valid but Untrusted" : "Signatures Invalid"}
-            </h2>
-          </div>
-
-          {trustMessage && (
-            <div className="bg-blue-50 dark:bg-blue-900/15 border border-blue-200 dark:border-blue-800 rounded-xl p-3 text-blue-700 dark:text-blue-400 text-xs animate-slideUp">
-              {trustMessage}
-            </div>
-          )}
-
-          {/* File info */}
-          <div className="card p-3 flex items-center justify-between">
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="text-sm">📄</span>
-              <span className="text-xs text-gray-600 dark:text-gray-400 truncate">{result.filename}</span>
-            </div>
-            <span className="badge badge-info text-[10px] shrink-0">{result.signature_count} sig(s)</span>
-          </div>
-
-          {/* Signatures */}
-          {result.signatures.map((sig, i) => {
-            const isUntrusted = sig.intact && sig.trust_status !== "VALID";
-            return (
-              <div key={i} className={`card p-4 border-l-4 ${
-                sig.intact && sig.trust_status === "VALID" ? "border-l-green-500"
-                  : isUntrusted ? "border-l-amber-500" : "border-l-red-500"
+            </>
+          ) : (
+            <>
+              {/* Verification results */}
+              <div className={`rounded-xl p-3 ${
+                result.is_valid
+                  ? "bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800"
+                  : hasUntrusted
+                  ? "bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800"
+                  : "bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800"
               }`}>
-
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-bold ${
-                      sig.intact && sig.trust_status === "VALID" ? "bg-green-500"
-                        : isUntrusted ? "bg-amber-400" : "bg-red-500"
-                    }`}>
-                      {i + 1}
-                    </div>
-                    <div>
-                      <p className="font-bold text-gray-900 dark:text-white text-sm">
-                        {sig.signer.common_name || "Unknown Signer"}
-                      </p>
-                      <p className="text-[10px] text-gray-500 dark:text-gray-400">
-                        {sig.signer.issuer_cn || ""}
-                      </p>
-                    </div>
-                  </div>
-                  <span className={`badge text-[10px] ${
-                    sig.intact && sig.trust_status === "VALID" ? "badge-success"
-                      : isUntrusted ? "badge-warning" : "badge-danger"
-                  }`}>
-                    {sig.intact && sig.trust_status === "VALID" ? "✓ VALID" : isUntrusted ? "⚠ UNTRUSTED" : "✗ INVALID"}
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">
+                    {result.is_valid ? "✅" : hasUntrusted ? "⚠️" : "❌"}
                   </span>
-                </div>
-
-                {/* Compact stats */}
-                <div className="grid grid-cols-2 gap-2 mb-3">
-                  <div className="bg-gray-50 dark:bg-gray-800 rounded-lg px-2.5 py-1.5">
-                    <span className="text-[9px] text-gray-400 font-medium uppercase">Integrity</span>
-                    <p className={`text-xs font-semibold ${sig.intact ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
-                      {sig.intact ? "Intact" : "Tampered"}
+                  <div>
+                    <p className="text-xs font-bold text-gray-900 dark:text-white">
+                      {result.is_valid ? "All Signatures Valid" : hasUntrusted ? "Untrusted Signatures" : "Invalid Signatures"}
                     </p>
-                  </div>
-                  <div className="bg-gray-50 dark:bg-gray-800 rounded-lg px-2.5 py-1.5">
-                    <span className="text-[9px] text-gray-400 font-medium uppercase">Trust</span>
-                    <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 truncate">
-                      {isUntrusted ? "Untrusted" : sig.trust_status}
+                    <p className="text-[10px] text-gray-600 dark:text-gray-400">
+                      {result.filename} · {result.signature_count} sig(s)
                     </p>
                   </div>
                 </div>
-
-                {/* Cert chain */}
-                {sig.certificates && sig.certificates.length > 0 && (
-                  <div className="mb-3">
-                    <p className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 mb-1.5">Chain ({sig.certificates.length})</p>
-                    <div className="space-y-1">
-                      {sig.certificates.map((c, ci) => (
-                        <div key={ci} className="flex items-center gap-1.5 text-[11px] bg-gray-50 dark:bg-gray-800 rounded-lg px-2.5 py-1.5">
-                          <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold ${
-                            c.is_self_signed ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
-                              : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
-                          }`}>
-                            {ci + 1}
-                          </span>
-                          <span className="font-medium text-gray-700 dark:text-gray-300 truncate flex-1">
-                            {c.subject_cn || "Unknown"}
-                          </span>
-                          {c.is_self_signed && <span className="text-[8px] text-purple-600 dark:text-purple-400">ROOT</span>}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Trust action */}
-                {isUntrusted && (
-                  <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/50 rounded-xl p-3">
-                    <p className="text-[11px] font-semibold text-amber-800 dark:text-amber-300 mb-2">🔒 Not in trust store</p>
-                    <div className="flex gap-1.5">
-                      <button onClick={handleBulkTrust} disabled={bulkTrusting} className="btn btn-outline btn-sm text-[10px] px-2 py-1">
-                        {bulkTrusting ? "⏳" : "🔗 Trust Chain"}
-                      </button>
-                      <button onClick={() => handleTrustCertificate(i, sig)} disabled={trusting === i} className="btn btn-primary btn-sm text-[10px] px-2 py-1">
-                        {trusting === i ? "⏳" : "🔐 Trust Signer"}
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {sig.timestamps?.signing_time && sig.timestamps.signing_time !== "Unknown" && (
-                  <div className="pt-2 border-t border-gray-100 dark:border-gray-800">
-                    <span className="text-[10px] text-gray-400">Signed: </span>
-                    <span className="text-[10px] text-gray-600 dark:text-gray-400 font-medium">{sig.timestamps.signing_time}</span>
-                  </div>
-                )}
               </div>
-            );
-          })}
 
-          {/* Trust Store */}
-          <div className="card overflow-hidden">
-            <button onClick={loadTrustStore} className="w-full flex items-center justify-between p-3 text-left hover:bg-gray-50 dark:hover:bg-gray-800 transition">
-              <div className="flex items-center gap-2">
-                <span className="text-sm">🛡️</span>
-                <div>
-                  <p className="font-semibold text-gray-900 dark:text-white text-xs">Trust Store</p>
-                  <p className="text-[10px] text-gray-500">{trustStore.length} cert(s)</p>
-                </div>
+              {/* Signature cards */}
+              {result.signatures.map((sig, i) => (
+                <SignatureCard key={i} sig={sig} index={i} />
+              ))}
+
+              {/* Trust Store */}
+              <TrustStoreSection />
+
+              {/* Actions */}
+              <div className="flex gap-2">
+                <button onClick={reset} className="btn btn-outline flex-1 text-xs">🔍 Verify Another</button>
+                <ExportButton file={file} result={result} hasUntrusted={hasUntrusted} stampPos={stampPos} />
               </div>
-              <span className="text-gray-400 text-xs">{showTrustStore ? "▲" : "▼"}</span>
-            </button>
-
-            {showTrustStore && (
-              <div className="border-t border-gray-200 dark:border-gray-700 p-3 space-y-2 animate-slideUp">
-                <div className="flex gap-1.5 flex-wrap">
-                  {file && hasUntrusted && (
-                    <button onClick={handleBulkTrust} disabled={bulkTrusting} className="btn btn-primary btn-sm text-[10px] px-2 py-1">
-                      {bulkTrusting ? "⏳" : "🔗 Trust Full Chain"}
-                    </button>
-                  )}
-                  <button onClick={() => handleLoadCaBundle("india")} disabled={loadingBundle} className="btn btn-outline btn-sm text-[10px] px-2 py-1">
-                    {loadingBundle ? "⏳" : "🇮🇳 India CA"}
-                  </button>
-                </div>
-                {trustStore.length === 0 ? (
-                  <p className="text-[11px] text-gray-500 text-center py-3">No trusted certificates.</p>
-                ) : (
-                  <div className="space-y-1.5 max-h-32 overflow-y-auto">
-                    {trustStore.map((cert) => (
-                      <div key={cert.id} className="flex items-center gap-2 bg-gray-50 dark:bg-gray-800 rounded-lg px-2.5 py-2">
-                        <span className="text-xs">🛡️</span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[11px] font-medium text-gray-900 dark:text-white truncate">{cert.name}</p>
-                          <p className="text-[9px] text-gray-500">{cert.issuer_cn}</p>
-                        </div>
-                        <button onClick={() => handleRemoveTrust(cert.id)} className="text-red-500 hover:text-red-700 text-[10px] font-medium">Remove</button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Actions */}
-          <div className="flex gap-2">
-            <button onClick={reset} className="btn btn-outline flex-1 text-xs">🔍 Verify Another</button>
-            <ExportButton file={file} result={result} hasUntrusted={hasUntrusted} />
-          </div>
+            </>
+          )}
         </div>
       </div>
 
+      {/* Right panel - PDF Preview with draggable stamp */}
+      <div className="flex-1 relative">
+        {file && result ? (
+          <PdfPreviewWithStamp result={result} file={file} hasUntrusted={hasUntrusted} stampPos={stampPos} setStampPos={setStampPos} />
+        ) : (
+          <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+            Upload a PDF to preview
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-function PdfPreviewWithTicks({ result, file, hasUntrusted }: { result: VerificationResult; file: File | null; hasUntrusted: boolean | undefined }) {
+
+function SignatureCard({ sig, index }: { sig: any; index: number }) {
+  const [expanded, setExpanded] = useState(false);
+  const isValid = sig.intact && sig.trust_status === "VALID";
+
+  return (
+    <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl overflow-hidden">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center gap-3 p-3 text-left"
+      >
+        <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-white text-xs font-bold ${
+          isValid ? "bg-green-500" : sig.intact ? "bg-amber-400" : "bg-red-500"
+        }`}>
+          {index + 1}
+        </span>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-bold text-gray-900 dark:text-white truncate">
+            {sig.signer?.common_name || "Unknown"}
+          </p>
+          <p className="text-[10px] text-gray-500 truncate">
+            {sig.signer?.issuer_cn || ""}
+          </p>
+        </div>
+        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+          isValid ? "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400"
+            : sig.intact ? "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-400"
+            : "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400"
+        }`}>
+          {isValid ? "VALID" : sig.intact ? "UNTRUSTED" : "INVALID"}
+        </span>
+      </button>
+      {expanded && (
+        <div className="px-3 pb-3 space-y-2 border-t border-gray-100 dark:border-gray-800">
+          <div className="grid grid-cols-2 gap-2 pt-2">
+            <div>
+              <p className="text-[9px] text-gray-500 uppercase">Integrity</p>
+              <p className={`text-[11px] font-bold ${sig.intact ? "text-green-600" : "text-red-600"}`}>
+                {sig.intact ? "Intact" : "Tampered"}
+              </p>
+            </div>
+            <div>
+              <p className="text-[9px] text-gray-500 uppercase">Trust</p>
+              <p className={`text-[11px] font-bold ${
+                sig.trust_status === "VALID" ? "text-green-600"
+                  : sig.trust_status === "UNTRUSTED" ? "text-amber-600"
+                  : "text-red-600"
+              }`}>
+                {sig.trust_status || "N/A"}
+              </p>
+            </div>
+          </div>
+          {sig.timestamps?.signing_time && sig.timestamps.signing_time !== "Unknown" && (
+            <div>
+              <p className="text-[9px] text-gray-500 uppercase">Signed</p>
+              <span className="text-[10px] text-gray-600 dark:text-gray-400 font-medium">{sig.timestamps.signing_time}</span>
+            </div>
+          )}
+          {sig.details?.reason && (
+            <div><p className="text-[9px] text-gray-500 uppercase">Reason</p><p className="text-[11px] text-gray-700 dark:text-gray-300">{sig.details.reason}</p></div>
+          )}
+          {sig.details?.location && (
+            <div><p className="text-[9px] text-gray-500 uppercase">Location</p><p className="text-[11px] text-gray-700 dark:text-gray-300">{sig.details.location}</p></div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+function TrustStoreSection() {
+  const [trustStore, setTrustStore] = useState<any[]>([]);
+  const [showAdd, setShowAdd] = useState(false);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/trust-store`).then(r => r.json()).then(setTrustStore).catch(() => {});
+  }, []);
+
+  const handleRemoveTrust = async (id: number) => {
+    await fetch(`${API_BASE}/api/trust-store/${id}`, { method: "DELETE" });
+    setTrustStore(trustStore.filter(c => c.id !== id));
+  };
+
+  return (
+    <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl overflow-hidden">
+      <button onClick={() => setShowAdd(!showAdd)} className="w-full flex items-center gap-2 p-3 text-left">
+        <span>🛡️</span>
+        <span className="text-xs font-bold text-gray-900 dark:text-white flex-1">Trust Store</span>
+        <span className="text-[10px] text-gray-500">{trustStore.length} cert(s)</span>
+        <span className="text-gray-400 text-xs">{showAdd ? "▲" : "▼"}</span>
+      </button>
+      {showAdd && (
+        <div className="px-3 pb-3 border-t border-gray-100 dark:border-gray-800">
+          {trustStore.length === 0 ? (
+            <p className="text-[11px] text-gray-500 text-center py-3">No trusted certificates.</p>
+          ) : (
+            <div className="space-y-1.5 max-h-32 overflow-y-auto pt-2">
+              {trustStore.map((cert) => (
+                <div key={cert.id} className="flex items-center gap-2 bg-gray-50 dark:bg-gray-800 rounded-lg px-2.5 py-2">
+                  <span className="text-xs">🛡️</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] font-medium text-gray-900 dark:text-white truncate">{cert.name}</p>
+                    <p className="text-[9px] text-gray-500">{cert.issuer_cn}</p>
+                  </div>
+                  <button onClick={() => handleRemoveTrust(cert.id)} className="text-red-500 hover:text-red-700 text-[10px] font-medium">Remove</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   PDF Preview with Draggable/Resizable Stamp
+   ═══════════════════════════════════════════════════════════════════ */
+
+function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos }: { result: VerificationResult; file: File | null; hasUntrusted: boolean | undefined; stampPos: {x:number;y:number;w:number;h:number}|null; setStampPos: (p:{x:number;y:number;w:number;h:number})=>void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerSize, setContainerSize] = useState({ w: 0, h: 0 });
   const pageDim = result.page_dimensions;
+
+  // Stamp state comes from parent
+  const [dragging, setDragging] = useState(false);
+  const [resizing, setResizing] = useState(false);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -434,7 +308,7 @@ function PdfPreviewWithTicks({ result, file, hasUntrusted }: { result: Verificat
     return () => obs.disconnect();
   }, []);
 
-  // Calculate scale to fit PDF page in container (object-fit: contain logic)
+  // Calculate scale
   let scale = 1;
   let offsetX = 0;
   let offsetY = 0;
@@ -448,59 +322,154 @@ function PdfPreviewWithTicks({ result, file, hasUntrusted }: { result: Verificat
     offsetY = (containerSize.h - renderedH) / 2;
   }
 
+  // Initialize stamp position at first signature's widget area
+  useEffect(() => {
+    if (!stampPos && result.signatures.length > 0 && pageDim) {
+      const sig = result.signatures[0];
+      const pos = sig.details?.position;
+      if (pos) {
+        const sx = Math.max(10, pos.x1 - 220);
+        const sy = pos.y1 - 10;
+        setStampPos({ x: sx, y: sy, w: 210, h: 80 });
+      } else {
+        setStampPos({ x: pageDim.width - 230, y: pageDim.height - 120, w: 210, h: 80 });
+      }
+    }
+  }, [result, pageDim]);
+
+  // Convert PDF coords to screen coords
+  const pdfToScreen = (px: number, py: number) => ({
+    sx: offsetX + px * scale,
+    sy: offsetY + (pageDim!.height - py) * scale,
+  });
+
+  // Convert screen coords to PDF coords
+  const screenToPdf = (sx: number, sy: number) => ({
+    px: (sx - offsetX) / scale,
+    py: pageDim!.height - (sy - offsetY) / scale,
+  });
+
+  // Mouse handlers for dragging
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragging(true);
+    const rect = containerRef.current!.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    if (stampPos) {
+      const { sx, sy } = pdfToScreen(stampPos.x, stampPos.y);
+      setDragOffset({ x: mouseX - sx, y: mouseY - sy });
+    }
+  }, [stampPos, offsetX, offsetY, scale, pageDim]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!dragging || !stampPos || !pageDim) return;
+    const rect = containerRef.current!.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    const { px, py } = screenToPdf(mouseX - dragOffset.x, mouseY - dragOffset.y);
+    setStampPos({ ...stampPos, x: Math.max(0, Math.min(px, pageDim.width - stampPos.w)), y: Math.max(0, Math.min(py, pageDim.height - stampPos.h)) });
+  }, [dragging, dragOffset, stampPos, offsetX, offsetY, scale, pageDim]);
+
+  const handleMouseUp = useCallback(() => {
+    setDragging(false);
+    setResizing(false);
+  }, []);
+
+  // Resize handler
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setResizing(true);
+  }, []);
+
+  useEffect(() => {
+    if (dragging || resizing) {
+      window.addEventListener("mousemove", handleMouseMove as any);
+      window.addEventListener("mouseup", handleMouseUp);
+      return () => {
+        window.removeEventListener("mousemove", handleMouseMove as any);
+        window.removeEventListener("mouseup", handleMouseUp);
+      };
+    }
+  }, [dragging, resizing, handleMouseMove, handleMouseUp]);
+
+  // Screen position of stamp
+  const screenStamp = stampPos && pageDim
+    ? { ...pdfToScreen(stampPos.x, stampPos.y), w: stampPos.w * scale, h: stampPos.h * scale }
+    : null;
+
   return (
-    <div ref={containerRef} className="flex-1 relative bg-gray-100 dark:bg-gray-900">
+    <div
+      ref={containerRef}
+      className="flex-1 relative bg-gray-100 dark:bg-gray-900 overflow-hidden"
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+    >
       <iframe
         src={file ? URL.createObjectURL(file) : ""}
-        className="w-full h-full border-0"
+        className="w-full h-full border-0 pointer-events-none"
         title="PDF Preview"
       />
 
-      {/* Signature tick badges */}
-      {result.signatures.map((sig, i) => {
-        const pos = sig.details?.position;
-        if (!pos || !pageDim || containerSize.w === 0) return null;
-
-        // PDF coords: y=0 at bottom. Screen: y=0 at top.
-        const screenX = offsetX + pos.x1 * scale;
-        const screenY = offsetY + (pageDim.height - pos.y2) * scale;
-        const tickW = (pos.x2 - pos.x1) * scale;
-        const tickH = (pos.y2 - pos.y1) * scale;
-
-        const isValid = sig.intact && sig.trust_status === "VALID";
-        const isUntrustedSig = sig.intact && !isValid;
-
-        return (
-          <div
-            key={i}
-            className="absolute pointer-events-none"
-            style={{
-              left: `${screenX}px`,
-              top: `${screenY}px`,
-              width: `${tickW}px`,
-              height: `${tickH}px`,
-            }}
-          >
-            {/* Green/amber/red tick icon at top-right of signature area */}
-            <div className={`absolute -top-3 -right-3 w-7 h-7 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-lg animate-bounceIn z-10 ${
-              isValid ? "bg-green-500 shadow-green-500/40"
-                : isUntrustedSig ? "bg-amber-400 shadow-amber-400/40"
-                : "bg-red-500 shadow-red-500/40"
-            }`}>
-              {isValid ? "✓" : isUntrustedSig ? "⚠" : "✗"}
+      {/* Draggable stamp overlay */}
+      {screenStamp && (
+        <div
+          className={`absolute select-none ${dragging ? "cursor-grabbing" : "cursor-grab"}`}
+          style={{
+            left: `${screenStamp.sx}px`,
+            top: `${screenStamp.sy}px`,
+            width: `${screenStamp.w}px`,
+            height: `${screenStamp.h}px`,
+            zIndex: 50,
+          }}
+          onMouseDown={handleMouseDown}
+        >
+          {/* Stamp content — matches the PDF export exactly */}
+          <div className="w-full h-full bg-white/95 backdrop-blur-sm border border-gray-300 rounded shadow-lg p-2 flex flex-col justify-between">
+            <div>
+              <p className="text-[11px] font-bold text-gray-900 leading-tight">Signature valid</p>
+              <p className="text-[9px] text-gray-600 leading-tight mt-0.5">
+                Digitally signed by {result.signatures[0]?.signer?.common_name || "Unknown"}
+              </p>
+              {result.signatures[0]?.timestamps?.signing_time && (
+                <p className="text-[8px] text-gray-500 leading-tight">
+                  Date: {result.signatures[0].timestamps.signing_time}
+                </p>
+              )}
+              {result.signatures[0]?.details?.reason && (
+                <p className="text-[8px] text-gray-500 leading-tight">
+                  Reason: {result.signatures[0].details.reason}
+                </p>
+              )}
+              {result.signatures[0]?.details?.location && (
+                <p className="text-[8px] text-gray-500 leading-tight">
+                  Location: {result.signatures[0].details.location}
+                </p>
+              )}
             </div>
-            {/* Subtle border around signature area */}
-            <div className={`w-full h-full rounded border-2 ${
-              isValid ? "border-green-400/50"
-                : isUntrustedSig ? "border-amber-400/50"
-                : "border-red-400/50"
-            }`} />
+            {/* Green checkmark */}
+            <div className="absolute right-2 top-1/2 -translate-y-1/2">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 12.5l5 5L20 6" />
+              </svg>
+            </div>
           </div>
-        );
-      })}
+          {/* Resize handle */}
+          <div
+            className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize"
+            onMouseDown={handleResizeStart}
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" className="absolute bottom-0.5 right-0.5">
+              <path d="M10 2L2 10M10 6L6 10M10 10L10 10" stroke="#999" strokeWidth="1.5" />
+            </svg>
+          </div>
+        </div>
+      )}
 
       {/* Overall status badge */}
-      <div className="absolute top-4 right-4 animate-bounceIn">
+      <div className="absolute top-4 right-4 animate-bounceIn z-40">
         <div className={`flex flex-col items-center gap-1 px-3 py-2 rounded-xl shadow-xl backdrop-blur-sm ${
           result.is_valid ? "bg-green-500/90 text-white"
             : hasUntrusted ? "bg-amber-500/90 text-white"
@@ -514,11 +483,23 @@ function PdfPreviewWithTicks({ result, file, hasUntrusted }: { result: Verificat
           </div>
         </div>
       </div>
+
+      {/* Instructions */}
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40">
+        <div className="bg-black/70 text-white text-[10px] px-3 py-1.5 rounded-full backdrop-blur-sm">
+          Drag stamp to reposition · Drag corner to resize
+        </div>
+      </div>
     </div>
   );
 }
 
-function ExportButton({ file, result, hasUntrusted }: { file: File | null; result: VerificationResult | null; hasUntrusted: boolean | undefined }) {
+
+/* ═══════════════════════════════════════════════════════════════════
+   Export Button — sends stamp position to backend
+   ═══════════════════════════════════════════════════════════════════ */
+
+function ExportButton({ file, result, hasUntrusted, stampPos }: { file: File | null; result: VerificationResult | null; hasUntrusted: boolean | undefined; stampPos: {x:number;y:number;w:number;h:number}|null }) {
   const [exporting, setExporting] = useState(false);
   const [exportResult, setExportResult] = useState<any>(null);
 
@@ -528,7 +509,12 @@ function ExportButton({ file, result, hasUntrusted }: { file: File | null; resul
     try {
       const form = new FormData();
       form.append("file", file);
-      const res = await fetch(`${API_BASE}/api/verify/stamp`, { method: "POST", body: form });
+      // Send stamp position to backend
+      let url = `${API_BASE}/api/verify/stamp`;
+      if (stampPos) {
+        url += `?stamp_x=${stampPos.x}&stamp_y=${stampPos.y}&stamp_w=${stampPos.w}&stamp_h=${stampPos.h}`;
+      }
+      const res = await fetch(url, { method: "POST", body: form });
       if (!res.ok) { const err = await res.json(); throw new Error(err.detail || "Export failed"); }
       setExportResult(await res.json());
     } catch (err: any) {

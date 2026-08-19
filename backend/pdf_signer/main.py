@@ -9,7 +9,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException, Request
+from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -820,9 +820,17 @@ async def verify_with_trust_store(
 @app.post("/api/verify/stamp")
 async def stamp_verified_pdf(
     file: UploadFile = File(...),
+    stamp_x: float = Query(None, description="Stamp X position"),
+    stamp_y: float = Query(None, description="Stamp Y position"),
+    stamp_w: float = Query(None, description="Stamp width"),
+    stamp_h: float = Query(None, description="Stamp height"),
     db: Session = Depends(get_db),
 ):
-    """Verify a PDF and create a stamped copy with verification result embedded."""
+    """Verify a PDF and create a stamped copy with verification result embedded.
+    
+    Optional params stamp_x, stamp_y, stamp_w, stamp_h allow the user
+    to specify exact stamp position and size from the frontend preview.
+    """
     ext = Path(file.filename).suffix.lower()
     if ext not in ALLOWED_PDF_EXTENSIONS:
         raise HTTPException(400, "Only PDF files are accepted")
@@ -848,9 +856,16 @@ async def stamp_verified_pdf(
     except Exception as e:
         raise HTTPException(500, f"Verification failed: {str(e)}")
 
+    # Build stamp position override
+    stamp_position = None
+    if stamp_x is not None and stamp_y is not None:
+        sw = stamp_w or 210
+        sh = stamp_h or 80
+        stamp_position = {"x": stamp_x, "y": stamp_y, "w": sw, "h": sh}
+
     # Create stamped PDF
     try:
-        stamped_path = stamp_verification_result(str(pdf_path), result)
+        stamped_path = stamp_verification_result(str(pdf_path), result, stamp_position=stamp_position)
         stamped_name = Path(stamped_path).name
     except Exception as e:
         raise HTTPException(500, f"Failed to create verification stamp: {str(e)}")
