@@ -1,79 +1,165 @@
-# pd-eff Desktop Build
+# pd-eff — Build Guide
 
-## Build for Linux
+## Prerequisites
 
+| Tool | Purpose |
+|------|---------|
+| Python 3.10+ | Backend |
+| Node.js 20+ | Frontend & Electron |
+| npm | Package manager |
+| PyInstaller | Python → standalone binary |
+
+## Quick Build
+
+### Linux (AppImage)
+```bash
+cd desktop
+bash build-electron.sh appimage
+# → dist/electron/pd-eff-1.1.0.AppImage
+```
+
+### Linux (standalone tar.gz)
 ```bash
 cd desktop
 bash build-linux.sh
+# → dist/pd-eff-linux-x64.tar.gz
 ```
 
-Output: `dist/pd-eff-linux/` (folder) + `dist/pd-eff-linux-x64.tar.gz` (archive)
-
-### To run:
+### Windows (NSIS installer + portable)
 ```bash
-cd dist/pd-eff-linux
-./pd-eff
-# Opens http://localhost:8765 in browser
+cd desktop
+bash build-electron.sh win
+# → dist/electron/pd-eff-setup-1.1.0-win-x64.exe
+# → dist/electron/pd-eff-1.1.0-win-x64-portable.exe
 ```
 
-### To distribute:
-```bash
-# Share the tar.gz
-tar -xzf pd-eff-linux-x64.tar.gz
-cd pd-eff-linux
-./pd-eff
-```
-
----
-
-## Build for Windows
-
+### Windows (standalone zip)
 ```bash
 cd desktop
 bash build-windows.sh
+# → dist/pd-eff-windows/
 ```
-
-Output: `dist/pd-eff-windows/` (folder with .exe + .bat launcher)
-
-### To run:
-```
-Double-click pd-eff.bat
-Browser opens to http://localhost:8765
-```
-
-### To create installer:
-1. Install [NSIS](https://nsis.sourceforge.io/)
-2. Run `makensis installer.nsi`
-3. Distribute `pd-eff-setup.exe`
 
 ---
 
-## Requirements
+## Build Targets
 
-### Linux
-- Python 3.12+ (for building only)
-- OpenSC (`sudo apt install opensc`) for USB key support
-- Any browser
+### Electron Builds (requires Node.js)
 
-### Windows
-- Python 3.12+ (for building only, or use pre-built .exe)
-- OpenSC (for USB key support) — download from https://opensc.org
-- Any browser
+| Target | Command | Output | Size |
+|--------|---------|--------|------|
+| **AppImage** | `build-electron.sh appimage` | `.AppImage` | ~100 MB |
+| **deb** | `build-electron.sh deb` | `.deb` | ~100 MB |
+| **rpm** | `build-electron.sh rpm` | `.rpm` | ~100 MB |
+| **NSIS** | `build-electron.sh win` | `.exe` installer | ~100 MB |
+| **Portable** | `build-electron.sh win` | `.exe` portable | ~100 MB |
+
+> ⚠️ **deb/rpm builds** must run on their respective distros (Debian/Ubuntu or Fedora/RHEL).
+> AppImage works on **any** Linux distribution.
+
+### Standalone Builds (requires only Python)
+
+| Platform | Command | Output | Size |
+|----------|---------|--------|------|
+| **Linux x64** | `build-linux.sh` | `pd-eff-linux-x64.tar.gz` | ~50 MB |
+| **Windows x64** | `build-windows.sh` (run on Windows) | `pd-eff-windows/` | ~38 MB |
 
 ---
 
-## How It Works
+## CI/CD (GitHub Actions)
 
-1. `pd-eff` / `pd-eff.exe` is a standalone Python executable
-2. It starts a local web server on port 8765
-3. Open your browser to http://localhost:8765
-4. Upload PDFs, draw signature placement, sign with USB key
-5. All data stored locally — no internet needed
+Triggers on `v*` tag push or manual dispatch:
+
+| Job | Runner | Output |
+|-----|--------|--------|
+| `build-linux` | ubuntu-latest | `pd-eff-linux-x64.tar.gz` |
+| `build-windows` | windows-latest | `pd-eff-windows/` |
+| `electron-linux` | ubuntu-latest | `pd-eff-*.AppImage` |
+| `electron-windows` | windows-latest | `pd-eff-*.exe` (NSIS + portable) |
+
+Trigger a build:
+```bash
+git tag v1.2.0
+git push origin v1.2.0
+```
 
 ---
 
-## File Size
+## Installing Packages
 
-- Linux: ~55MB
-- Windows: ~55MB
-- No Python installation required on target machine
+### AppImage (Linux — any distro)
+```bash
+chmod +x pd-eff-1.1.0.AppImage
+./pd-eff-1.1.0.AppImage
+```
+
+### .deb (Debian/Ubuntu)
+```bash
+sudo dpkg -i pd-eff_1.1.0_amd64.deb
+sudo apt-get install -f  # resolve dependencies
+pd-eff
+```
+
+### .rpm (Fedora/RHEL)
+```bash
+sudo rpm -i pd-eff-1.1.0.x86_64.rpm
+pd-eff
+```
+
+### NSIS Installer (Windows)
+Double-click `pd-eff-setup-1.1.0-win-x64.exe` and follow the wizard.
+
+### Portable (Windows)
+Extract and run `pd-eff-1.1.0-win-x64-portable.exe` — no installation needed.
+
+---
+
+## Auto-Update
+
+```bash
+cd <install-directory>
+./update.sh .
+```
+
+Checks GitHub releases for newer versions → downloads → verifies SHA256 → replaces files.
+
+---
+
+## Development
+
+```bash
+cd desktop
+npm install
+npm start          # Run Electron in dev mode (needs Python backend)
+npm run build:linux  # Build Linux packages
+npm run build:win    # Build Windows packages (Windows only)
+```
+
+---
+
+## Project Structure
+
+```
+desktop/
+├── main.js              # Electron main process (splash screen, window, IPC)
+├── preload.js           # Secure IPC bridge
+├── updater.js           # Electron auto-updater
+├── update.sh            # Standalone auto-updater (no Electron)
+├── package.json         # Electron + electron-builder config
+├── build-electron.sh    # Build all Electron packages
+├── build-linux.sh       # Build standalone Linux binary
+├── build-windows.sh     # Build standalone Windows binary
+├── build-deb.sh         # Build .deb package
+├── build-universal.sh   # Build universal tar.gz
+├── generate-icons.sh    # Generate app icons
+├── BUILD.md             # This file
+├── icon.png             # App icon
+└── icons/               # Multi-size icons
+    ├── 16x16.png
+    ├── 32x32.png
+    ├── 48x48.png
+    ├── 64x64.png
+    ├── 128x128.png
+    ├── 256x256.png
+    └── 512x512.png
+```

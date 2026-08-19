@@ -5,7 +5,7 @@
 set -e
 
 GITHUB_REPO="minatolun-dotcom/pdf-eff"
-CURRENT_VERSION="${PDEFF_VERSION:-1.0.0}"
+CURRENT_VERSION="${PDEFF_VERSION:-1.1.0}"
 INSTALL_DIR="${1:-$(dirname "$0")}"
 
 echo "🔍 pd-eff Auto-Updater"

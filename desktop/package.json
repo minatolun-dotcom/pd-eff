@@ -1,53 +1,137 @@
 {
   "name": "pd-eff",
-  "version": "1.0.0",
-  "description": "PDF Digital Signing - Offline Desktop App",
+  "version": "1.1.0",
+  "description": "pd-eff — PDF Digital Signing with USB Key Support",
   "main": "main.js",
+  "author": {
+    "name": "pd-eff",
+    "email": "pdeff@example.com"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/minatolun-dotcom/pdf-eff",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/minatolun-dotcom/pdf-eff.git"
+  },
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder",
-    "build-win": "electron-builder --win",
-    "build-mac": "electron-builder --mac",
-    "build-linux": "electron-builder --linux",
-    "setup": "cd .. && pip install pyinstaller && pyinstaller --onefile --name pd-eff-api backend/run.py",
-    "build-frontend": "cd ../frontend && npm run build"
+    "dev": "NODE_ENV=development electron .",
+    "build": "npm run build:linux && npm run build:win",
+    "build:linux": "electron-builder --linux --x64",
+    "build:linux:deb": "electron-builder --linux deb --x64",
+    "build:linux:rpm": "electron-builder --linux rpm --x64",
+    "build:linux:appimage": "electron-builder --linux AppImage --x64",
+    "build:win": "electron-builder --win --x64",
+    "build:win:nsis": "electron-builder --win nsis --x64",
+    "build:win:portable": "electron-builder --win portable --x64",
+    "postinstall": "electron-builder install-app-deps"
   },
   "build": {
     "appId": "com.pdeff.app",
     "productName": "pd-eff",
+    "copyright": "Copyright © 2026 pd-eff",
     "directories": {
-      "output": "dist"
+      "output": "dist/electron"
     },
     "files": [
       "main.js",
       "preload.js",
       "icon.*",
-      "../backend/**/*",
-      "../frontend/.next/**/*",
-      "../frontend/package.json",
-      "../frontend/node_modules/**/*"
+      "updater.js"
     ],
     "extraResources": [
+      {
+        "from": "../backend/run.py",
+        "to": "python/run.py"
+      },
+      {
+        "from": "../backend/pdf_signer",
+        "to": "python/pdf_signer"
+      },
+      {
+        "from": "../backend/requirements.txt",
+        "to": "python/requirements.txt"
+      },
       {
         "from": "../backend/data",
         "to": "data"
       }
     ],
-    "win": {
-      "target": "nsis",
-      "icon": "icon.ico"
-    },
-    "mac": {
-      "target": "dmg",
-      "icon": "icon.icns"
-    },
+    "asar": true,
+    "asarUnpack": [
+      "extraResources/**/*"
+    ],
     "linux": {
-      "target": "AppImage",
-      "icon": "icon.png"
+      "target": [
+        { "target": "AppImage", "arch": ["x64"] },
+        { "target": "deb", "arch": ["x64"] },
+        { "target": "rpm", "arch": ["x64"] }
+      ],
+      "icon": "icons",
+      "category": "Office",
+      "description": "PDF Digital Signing with USB Key Support",
+      "desktop": {
+        "Name": "pd-eff",
+        "Comment": "PDF Digital Signing",
+        "Categories": "Office;Utility;Security;",
+        "MimeType": "application/pdf;"
+      },
+      "mimeTypes": ["application/pdf"]
+    },
+    "deb": {
+      "depends": [
+        "libgtk-3-0",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0",
+        "libuuid1",
+        "libsecret-1-0",
+        "python3",
+        "python3-pip",
+        "python3-venv"
+      ],
+      "compression": "xz",
+      "priority": "optional"
+    },
+    "rpm": {
+      "depends": [
+        "gtk3",
+        "libnotify",
+        "nss",
+        "libXScrnSaver",
+        "libXtst",
+        "xdg-utils",
+        "atspi2-core",
+        "python3",
+        "python3-pip"
+      ],
+      "compression": "xz"
+    },
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "icon": "icon.ico",
+      "artifactName": "pd-eff-setup-${version}-win-x64.${ext}"
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "pd-eff",
+      "installerIcon": "icon.ico",
+      "uninstallerIcon": "icon.ico",
+      "installerHeaderIcon": "icon.ico",
+      "unicode": true
+    },
+    "portable": {
+      "artifactName": "pd-eff-${version}-win-x64-portable.${ext}"
     }
   },
   "devDependencies": {

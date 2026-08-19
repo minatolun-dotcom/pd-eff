@@ -1,6 +1,29 @@
 # pd-eff
 
-Digital PDF signing and signature verification.
+Digital PDF signing and signature verification. Works **100% offline**.
+
+## Download
+
+| Platform | Format | Link |
+|----------|--------|------|
+| 🐧 **Linux x64** | AppImage | [pd-eff-1.1.0.AppImage](https://github.com/minatolun-dotcom/pdf-eff/releases/latest/download/pd-eff-linux-x64.tar.gz) |
+| 🐧 **Linux x64** | tar.gz (standalone) | [pd-eff-linux-x64.tar.gz](https://github.com/minatolun-dotcom/pdf-eff/releases/latest/download/pd-eff-linux-x64.tar.gz) |
+| 🪟 **Windows x64** | zip (standalone) | [pd-eff-windows.zip](https://github.com/minatolun-dotcom/pdf-eff/releases/latest/download/pd-eff-windows.zip) |
+
+**Linux AppImage:**
+```bash
+chmod +x pd-eff-*.AppImage
+./pd-eff-*.AppImage
+```
+
+**Linux tar.gz:**
+```bash
+tar -xzf pd-eff-linux-x64.tar.gz
+cd pd-eff-linux-x64
+./pd-eff
+```
+
+**Windows:** Extract zip → double-click `pd-eff.bat`
 
 ## Features
 
@@ -10,6 +33,8 @@ Digital PDF signing and signature verification.
 - 🔑 **USB Key Auto-Detect** — Automatically detects plugged-in PKCS#11 tokens
 - 📜 **Certificate Manager** — Generate self-signed certificates for testing
 - 🛡️ **Tamper Detection** — Detect any modification to signed documents
+- 📦 **Electron Desktop App** — Native window with splash screen and auto-updater
+- 🔄 **Auto-Update** — `./update.sh .` to check for and install updates
 
 ## Quick Start
 
@@ -74,9 +99,30 @@ See [DEPLOY.md](./DEPLOY.md) for full instructions.
 | `POST` | `/api/sign/advanced` | Sign with certificate |
 | `POST` | `/api/verify` | Verify signatures |
 | `POST` | `/api/certificates/generate` | Generate test cert |
-| `GET` | `/api/pkcs11/tokens` | Detect USB keys |
+| `GET` | `/api/pkcs11/tokens` | Detect USB keys |## Desktop App (Electron)
+
+For a native desktop experience with window chrome, splash screen, and auto-updates:
+
+```bash
+cd desktop
+npm install
+npm start              # Dev mode
+npm run build:linux    # Build AppImage + deb + rpm
+npm run build:win      # Build NSIS installer + portable
+```
+
+See [desktop/BUILD.md](./desktop/BUILD.md) for full build instructions.
+
+## Docker
+
+```bash
+docker build -t pd-eff .
+docker run -p 8765:8765 pd-eff
+# → http://localhost:8765
+```
 
 ## Tech Stack
+
 
 | Layer | Technology |
 |-------|-----------|
@@ -86,6 +132,7 @@ See [DEPLOY.md](./DEPLOY.md) for full instructions.
 | Encryption | pikepdf (AES-256) |
 | Frontend | Next.js 14 / React / TypeScript |
 | PDF Viewer | pdfjs-dist |
+| Desktop | Electron 28 / electron-builder |
 
 ## License
 

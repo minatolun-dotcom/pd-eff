@@ -213,3 +213,146 @@ jobs:
         with:
           name: pd-eff-windows
           path: desktop/dist/pd-eff-windows/
+
+  # ─── Electron AppImage (Linux) ───────────────────────────────────────
+  electron-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm install
+          npm run build
+
+      - name: Install Electron deps
+        run: |
+          cd desktop
+          npm install
+          npx electron-builder install-app-deps
+
+      - name: Generate icons
+        run: |
+          cd desktop
+          mkdir -p icons
+          python3 -c "
+          import struct, zlib
+          def create_png(w, h, r, g, b):
+              def chunk(ct, data):
+                  c = ct + data
+                  crc = struct.pack('>I', zlib.crc32(c) & 0xffffffff)
+                  return struct.pack('>I', len(data)) + c + crc
+              header = b'\x89PNG\r\n\x1a\n'
+              ihdr = chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0))
+              raw = b''
+              for y in range(h):
+                  raw += b'\x00'
+                  for x in range(w):
+                      raw += bytes([r, g, b])
+              idat = chunk(b'IDAT', zlib.compress(raw))
+              iend = chunk(b'IEND', b'')
+              return header + ihdr + idat + iend
+          for s in [16, 32, 48, 64, 128, 256, 512]:
+              png = create_png(s, s, 0x0f, 0x34, 0x60)
+              with open(f'icons/{s}x{s}.png', 'wb') as f:
+                  f.write(png)
+          png = create_png(512, 512, 0x0f, 0x34, 0x60)
+          with open('icon.png', 'wb') as f:
+              f.write(png)
+          print('Icons generated')
+          "
+
+      - name: Build AppImage
+        run: |
+          cd desktop
+          npx electron-builder --linux AppImage --x64
+
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: pd-eff-linux-appimage
+          path: desktop/dist/electron/*.AppImage
+
+  # ─── Electron NSIS + Portable (Windows) ──────────────────────────────
+  electron-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm install
+          npm run build
+
+      - name: Install Electron deps
+        run: |
+          cd desktop
+          npm install
+          npx electron-builder install-app-deps
+
+      - name: Generate icons
+        run: |
+          cd desktop
+          mkdir -p icons
+          python3 -c "
+          import struct, zlib
+          def create_png(w, h, r, g, b):
+              def chunk(ct, data):
+                  c = ct + data
+                  crc = struct.pack('>I', zlib.crc32(c) & 0xffffffff)
+                  return struct.pack('>I', len(data)) + c + crc
+              header = b'\x89PNG\r\n\x1a\n'
+              ihdr = chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0))
+              raw = b''
+              for y in range(h):
+                  raw += b'\x00'
+                  for x in range(w):
+                      raw += bytes([r, g, b])
+              idat = chunk(b'IDAT', zlib.compress(raw))
+              iend = chunk(b'IEND', b'')
+              return header + ihdr + idat + iend
+          for s in [16, 32, 48, 64, 128, 256, 512]:
+              png = create_png(s, s, 0x0f, 0x34, 0x60)
+              with open(f'icons/{s}x{s}.png', 'wb') as f:
+                  f.write(png)
+          png = create_png(512, 512, 0x0f, 0x34, 0x60)
+          with open('icon.png', 'wb') as f:
+              f.write(png)
+          print('Icons generated')
+          "
+
+      - name: Build NSIS installer
+        run: |
+          cd desktop
+          npx electron-builder --win nsis portable --x64
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: pd-eff-windows-electron
+          path: desktop/dist/electron/*.exe
