@@ -123,9 +123,14 @@ def _cert_to_dict(asn1_cert, pyca_cert, field_name: str) -> dict:
 def _get_cn(name) -> str:
     """Extract Common Name from asn1crypto Name."""
     try:
-        for attr in name:
-            if hasattr(attr, "oid") and attr.oid.dotted_string == "2.5.4.3":
-                return attr.native or ""
+        native = name.native
+        if isinstance(native, dict):
+            return native.get("common_name", "") or ""
+        # Fallback: parse human_friendly
+        hf = name.human_friendly
+        for part in hf.split(","):
+            if part.strip().startswith("Common Name:"):
+                return part.split(":", 1)[1].strip()
     except Exception:
         pass
     return ""
@@ -134,9 +139,14 @@ def _get_cn(name) -> str:
 def _get_org(name) -> str:
     """Extract Organization from asn1crypto Name."""
     try:
-        for attr in name:
-            if hasattr(attr, "oid") and attr.oid.dotted_string == "2.5.4.10":
-                return attr.native or ""
+        native = name.native
+        if isinstance(native, dict):
+            return native.get("organization_name", "") or ""
+        # Fallback: parse human_friendly
+        hf = name.human_friendly
+        for part in hf.split(","):
+            if part.strip().startswith("Organization:"):
+                return part.split(":", 1)[1].strip()
     except Exception:
         pass
     return ""
