@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { verifyPdf, VerificationResult } from "@/lib/api";
 
 export default function VerifyPage() {
@@ -8,14 +8,26 @@ export default function VerifyPage() {
   const [result, setResult] = useState<VerificationResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [isDragging, setIsDragging] = useState(false);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
+  const handleFileSelect = useCallback((f: File) => {
     if (f && f.type === "application/pdf") {
       setFile(f);
       setResult(null);
       setError("");
     }
+  }, []);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (f) handleFileSelect(f);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const f = e.dataTransfer.files[0];
+    if (f) handleFileSelect(f);
   };
 
   const handleVerify = async () => {
@@ -32,44 +44,97 @@ export default function VerifyPage() {
     }
   };
 
+  const reset = () => {
+    setFile(null);
+    setResult(null);
+    setError("");
+  };
+
   return (
     <div className="max-w-3xl mx-auto">
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-900">Verify Signatures</h2>
-        <p className="text-gray-600 text-sm mt-1">
-          Upload a signed PDF to verify its digital signatures.
+      <div className="text-center mb-8">
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">
+          Verify Signatures
+        </h1>
+        <p className="text-gray-500 text-base">
+          Upload a signed PDF to verify its digital signatures and integrity.
         </p>
       </div>
 
       {/* Upload & Verify */}
       {!result && (
-        <div className="space-y-4">
-          <div className="bg-white rounded-xl border border-gray-200 p-8">
-            <label className="flex flex-col items-center justify-center w-full h-56 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition">
-              <div className="text-5xl mb-3">🔍</div>
-              <p className="text-lg font-medium text-gray-700">
-                {file ? file.name : "Drop a signed PDF here or click to upload"}
+        <div className="space-y-5 animate-fadeIn">
+          <div
+            className={`card p-10 transition-all duration-300 ${
+              isDragging ? "active border-blue-400 bg-blue-50/50" : ""
+            }`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setIsDragging(true);
+            }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={handleDrop}
+          >
+            <label className="flex flex-col items-center justify-center w-full cursor-pointer group">
+              <div className="relative mb-6">
+                <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-green-50 to-emerald-100 flex items-center justify-center text-5xl group-hover:scale-110 transition-transform duration-300">
+                  🔍
+                </div>
+                {file && (
+                  <div className="absolute -top-1 -right-1 w-7 h-7 rounded-full bg-green-500 text-white flex items-center justify-center text-sm shadow-lg animate-bounceIn">
+                    ✓
+                  </div>
+                )}
+              </div>
+              <p className="text-xl font-semibold text-gray-800 mb-1">
+                {file
+                  ? file.name
+                  : isDragging
+                  ? "Drop your PDF here"
+                  : "Drop a signed PDF here or click to upload"}
               </p>
-              {file && (
-                <p className="text-sm text-gray-500 mt-1">{(file.size / 1024).toFixed(0)} KB</p>
+              {file ? (
+                <p className="text-sm text-gray-400">
+                  {(file.size / 1024).toFixed(0)} KB · Ready to verify
+                </p>
+              ) : (
+                <p className="text-sm text-gray-400">
+                  PDF files up to 50MB
+                </p>
               )}
               <input type="file" accept=".pdf" className="hidden" onChange={handleFileChange} />
             </label>
           </div>
 
           {file && (
-            <button
-              onClick={handleVerify}
-              disabled={loading}
-              className="w-full py-3 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 disabled:bg-gray-300 transition"
-            >
-              {loading ? "⏳ Verifying..." : "✅ Verify Signatures"}
-            </button>
+            <div className="flex gap-3">
+              <button
+                onClick={handleVerify}
+                disabled={loading}
+                className="btn btn-success btn-lg flex-1"
+              >
+                {loading ? (
+                  <>
+                    <span className="animate-spin">⏳</span>
+                    Verifying Signatures...
+                  </>
+                ) : (
+                  "✅ Verify Signatures"
+                )}
+              </button>
+              <button onClick={reset} className="btn btn-outline btn-lg">
+                Clear
+              </button>
+            </div>
           )}
 
           {error && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm">
-              ❌ {error}
+            <div className="bg-red-50 border border-red-200 rounded-2xl p-5 text-red-700 text-sm animate-slideUp flex items-start gap-3">
+              <span className="text-lg">⚠️</span>
+              <div>
+                <p className="font-semibold mb-1">Verification Failed</p>
+                <p>{error}</p>
+              </div>
             </div>
           )}
         </div>
@@ -77,105 +142,148 @@ export default function VerifyPage() {
 
       {/* Results */}
       {result && (
-        <div className="space-y-4">
+        <div className="space-y-5 animate-slideUp">
           {/* Status banner */}
-          <div className={`rounded-xl p-6 text-center ${
-            result.is_valid
-              ? "bg-green-50 border-2 border-green-200"
-              : result.overall_status === "NO_SIGNATURES"
-              ? "bg-yellow-50 border-2 border-yellow-200"
-              : "bg-red-50 border-2 border-red-200"
-          }`}>
-            <div className="text-4xl mb-2">
-              {result.is_valid ? "✅" : result.overall_status === "NO_SIGNATURES" ? "⚠️" : "❌"}
-            </div>
-            <h3 className="text-lg font-bold mb-1">
-              {result.is_valid
-                ? "All Signatures Valid"
+          <div
+            className={`card p-8 text-center relative overflow-hidden ${
+              result.is_valid
+                ? "bg-gradient-to-br from-green-50 to-emerald-50"
                 : result.overall_status === "NO_SIGNATURES"
-                ? "No Digital Signatures"
-                : "Signatures Invalid"}
-            </h3>
-            <p className="text-sm">
-              {result.overall_status === "NO_SIGNATURES"
-                ? "This PDF has no digital signatures."
-                : result.is_valid
-                ? "All signatures are intact and valid."
-                : "One or more signatures are invalid or tampered."}
-            </p>
+                ? "bg-gradient-to-br from-amber-50 to-yellow-50"
+                : "bg-gradient-to-br from-red-50 to-rose-50"
+            }`}
+          >
+            <div className="relative">
+              <div
+                className={`w-16 h-16 rounded-2xl flex items-center justify-center text-3xl mx-auto mb-4 shadow-lg ${
+                  result.is_valid
+                    ? "bg-green-500 text-white shadow-green-500/30"
+                    : result.overall_status === "NO_SIGNATURES"
+                    ? "bg-amber-400 text-white shadow-amber-400/30"
+                    : "bg-red-500 text-white shadow-red-500/30"
+                }`}
+              >
+                {result.is_valid ? "✅" : result.overall_status === "NO_SIGNATURES" ? "⚠️" : "❌"}
+              </div>
+              <h2 className="text-xl font-bold text-gray-900 mb-1">
+                {result.is_valid
+                  ? "All Signatures Valid"
+                  : result.overall_status === "NO_SIGNATURES"
+                  ? "No Digital Signatures"
+                  : "Signatures Invalid"}
+              </h2>
+              <p className="text-sm text-gray-600">
+                {result.overall_status === "NO_SIGNATURES"
+                  ? "This PDF has no digital signatures."
+                  : result.is_valid
+                  ? "All signatures are intact and their certificates are valid."
+                  : "One or more signatures are invalid or have been tampered with."}
+              </p>
+            </div>
           </div>
 
           {/* File info */}
-          <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-center justify-between">
-            <span className="text-sm text-gray-600">{result.filename}</span>
-            <span className="text-sm font-bold">{result.signature_count} signature(s)</span>
+          <div className="card p-4 flex items-center justify-between">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center text-lg shrink-0">
+                📄
+              </div>
+              <span className="text-sm text-gray-600 truncate">{result.filename}</span>
+            </div>
+            <span className="badge badge-info shrink-0">{result.signature_count} signature(s)</span>
           </div>
 
           {/* Signature details */}
           {result.signatures.map((sig, i) => (
             <div
               key={i}
-              className={`bg-white rounded-xl border-2 p-4 ${
-                sig.intact && sig.valid ? "border-green-200" : "border-red-200"
-              }`}
+              className={`card p-5 border-l-4 ${
+                sig.intact && sig.valid
+                  ? "border-l-green-500"
+                  : sig.intact
+                  ? "border-l-amber-500"
+                  : "border-l-red-500"
+              } animate-slideIn`}
+              style={{ animationDelay: `${i * 100}ms` }}
             >
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold ${
-                    sig.intact && sig.valid ? "bg-green-500" : "bg-red-500"
-                  }`}>
+                  <div
+                    className={`w-10 h-10 rounded-xl flex items-center justify-center text-white text-sm font-bold ${
+                      sig.intact && sig.valid
+                        ? "bg-green-500"
+                        : sig.intact
+                        ? "bg-amber-400"
+                        : "bg-red-500"
+                    }`}
+                  >
                     {i + 1}
                   </div>
                   <div>
-                    <p className="font-semibold text-gray-900">
-                      {sig.signer.common_name || "Unknown"}
+                    <p className="font-bold text-gray-900">
+                      {sig.signer.common_name || "Unknown Signer"}
                     </p>
-                    <p className="text-xs text-gray-500">{sig.signer.organization || ""}</p>
+                    {sig.signer.organization && (
+                      <p className="text-xs text-gray-500">{sig.signer.organization}</p>
+                    )}
                   </div>
                 </div>
-                <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
-                  sig.intact && sig.valid
-                    ? "bg-green-100 text-green-800"
-                    : "bg-red-100 text-red-800"
-                }`}>
-                  {sig.intact && sig.valid ? "VALID" : "INVALID"}
+                <span
+                  className={`badge ${
+                    sig.intact && sig.valid
+                      ? "badge-success"
+                      : sig.intact
+                      ? "badge-warning"
+                      : "badge-danger"
+                  }`}
+                >
+                  {sig.intact && sig.valid ? "✓ VALID" : sig.intact ? "⚠ UNTRUSTED" : "✗ INVALID"}
                 </span>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div>
-                  <span className="text-gray-400">Trust: </span>
-                  <span className="text-gray-700">{sig.trust_status}</span>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="bg-gray-50 rounded-xl p-3">
+                  <span className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">Integrity</span>
+                  <p className={`text-sm font-semibold mt-0.5 ${sig.intact ? "text-green-600" : "text-red-600"}`}>
+                    {sig.intact ? "Intact" : "Tampered"}
+                  </p>
                 </div>
-                <div>
-                  <span className="text-gray-400">Issuer: </span>
-                  <span className="text-gray-700">{sig.signer.issuer_cn || "N/A"}</span>
+                <div className="bg-gray-50 rounded-xl p-3">
+                  <span className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">Trust</span>
+                  <p className="text-sm font-semibold text-gray-700 mt-0.5 truncate" title={sig.trust_status}>
+                    {sig.trust_status}
+                  </p>
                 </div>
-                <div>
-                  <span className="text-gray-400">Integrity: </span>
-                  <span className={sig.intact ? "text-green-700" : "text-red-700"}>
-                    {sig.intact ? "Intact" : "TAMPERED"}
-                  </span>
+                <div className="bg-gray-50 rounded-xl p-3">
+                  <span className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">Issuer</span>
+                  <p className="text-sm font-semibold text-gray-700 mt-0.5 truncate" title={sig.signer.issuer_cn}>
+                    {sig.signer.issuer_cn || "N/A"}
+                  </p>
                 </div>
-                <div>
-                  <span className="text-gray-400">Self-signed: </span>
-                  <span className="text-gray-700">{sig.signer.self_signed ? "Yes" : "No"}</span>
+                <div className="bg-gray-50 rounded-xl p-3">
+                  <span className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">Self-signed</span>
+                  <p className="text-sm font-semibold text-gray-700 mt-0.5">
+                    {sig.signer.self_signed ? "Yes" : "No"}
+                  </p>
                 </div>
               </div>
+
+              {/* Timestamp info */}
+              {sig.timestamps?.signing_time && sig.timestamps.signing_time !== "Unknown" && (
+                <div className="mt-3 pt-3 border-t border-gray-100">
+                  <span className="text-xs text-gray-400">Signed: </span>
+                  <span className="text-xs text-gray-600 font-medium">{sig.timestamps.signing_time}</span>
+                </div>
+              )}
             </div>
           ))}
 
-          {/* Reset */}
-          <button
-            onClick={() => {
-              setFile(null);
-              setResult(null);
-              setError("");
-            }}
-            className="w-full py-2 border-2 border-gray-300 text-gray-700 font-medium rounded-xl hover:bg-gray-50 transition text-sm"
-          >
-            🔍 Verify Another PDF
-          </button>
+          {/* Actions */}
+          <div className="flex gap-3">
+            <button onClick={reset} className="btn btn-outline flex-1">
+              🔍 Verify Another PDF
+            </button>
+          </div>
         </div>
       )}
     </div>

@@ -36,7 +36,8 @@ export default function PdfSigner({ file, onSign, signing }: PdfSignerProps) {
     async function loadPdf() {
       try {
         const pdfjsLib = await import("pdfjs-dist");
-        pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`;
+        pdfjsLib.GlobalWorkerOptions.workerSrc =
+          `//cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`;
         const arrayBuffer = await file.arrayBuffer();
         const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
         const pdfDoc = await loadingTask.promise;
@@ -65,7 +66,6 @@ export default function PdfSigner({ file, onSign, signing }: PdfSignerProps) {
         canvas.height = viewport.height;
         canvas.width = viewport.width;
         await page.render({ canvasContext: context, viewport }).promise;
-        // Draw existing rectangle if any
         if (rectangle) {
           drawRectangle(context, rectangle);
         }
@@ -77,16 +77,45 @@ export default function PdfSigner({ file, onSign, signing }: PdfSignerProps) {
   }, [pdf, pageNum, scale, rectangle]);
 
   const drawRectangle = (ctx: CanvasRenderingContext2D, rect: Rectangle) => {
+    // Shadow
+    ctx.shadowColor = "rgba(37, 99, 235, 0.3)";
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 2;
+
+    // Fill
+    ctx.fillStyle = "rgba(37, 99, 235, 0.08)";
+    ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+
+    // Border
+    ctx.shadowBlur = 0;
     ctx.strokeStyle = "#2563eb";
     ctx.lineWidth = 2;
-    ctx.setLineDash([5, 5]);
+    ctx.setLineDash([6, 4]);
     ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
-    ctx.fillStyle = "rgba(37, 99, 235, 0.1)";
-    ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+    ctx.setLineDash([]);
+
+    // Corner markers
+    const cornerSize = 8;
+    ctx.strokeStyle = "#2563eb";
+    ctx.lineWidth = 3;
+    const corners = [
+      [rect.x, rect.y],
+      [rect.x + rect.width, rect.y],
+      [rect.x, rect.y + rect.height],
+      [rect.x + rect.width, rect.y + rect.height],
+    ];
+    for (const [cx, cy] of corners) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, cornerSize / 2, 0, Math.PI * 2);
+      ctx.fillStyle = "#2563eb";
+      ctx.fill();
+    }
+
     // Label
     ctx.fillStyle = "#2563eb";
-    ctx.font = "12px system-ui";
-    ctx.fillText("Signature", rect.x + 4, rect.y + 16);
+    ctx.font = "bold 11px system-ui, sans-serif";
+    ctx.fillText("✍️ Signature", rect.x + 6, rect.y + 16);
   };
 
   const getCanvasCoords = (e: React.MouseEvent) => {
@@ -117,17 +146,14 @@ export default function PdfSigner({ file, onSign, signing }: PdfSignerProps) {
     const height = Math.abs(coords.y - startPoint.y);
     setPreviewRect({ x, y, width, height });
 
-    // Redraw canvas with preview
     const canvas = canvasRef.current;
     if (canvas) {
       const ctx = canvas.getContext("2d");
       if (ctx) {
-        // Re-render the page first
         pdf.getPage(pageNum).then((page: any) => {
           const viewport = page.getViewport({ scale });
           ctx.clearRect(0, 0, canvas.width, canvas.height);
           page.render({ canvasContext: ctx, viewport }).promise.then(() => {
-            // Draw preview rectangle
             drawRectangle(ctx, { x, y, width, height });
           });
         });
@@ -143,8 +169,7 @@ export default function PdfSigner({ file, onSign, signing }: PdfSignerProps) {
     const width = Math.abs(coords.x - startPoint.x);
     const height = Math.abs(coords.y - startPoint.y);
 
-    // Minimum size check
-    if (width > 20 && height > 10) {
+    if (width > 30 && height > 15) {
       setRectangle({ x, y, width, height });
       setPreviewRect(null);
     } else {
@@ -158,6 +183,15 @@ export default function PdfSigner({ file, onSign, signing }: PdfSignerProps) {
   const handleClear = () => {
     setRectangle(null);
     setPreviewRect(null);
+    // Re-render page without rectangle
+    if (pdf && canvasRef.current) {
+      pdf.getPage(pageNum).then((page: any) => {
+        const canvas = canvasRef.current!;
+        const ctx = canvas.getContext("2d")!;
+        const viewport = page.getViewport({ scale });
+        page.render({ canvasContext: ctx, viewport });
+      });
+    }
   };
 
   const handleSign = () => {
@@ -168,10 +202,12 @@ export default function PdfSigner({ file, onSign, signing }: PdfSignerProps) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-96 bg-gray-50 rounded-xl">
-        <div className="text-center">
-          <div className="animate-spin text-4xl mb-3">📄</div>
-          <p className="text-gray-500">Loading PDF...</p>
+      <div className="flex items-center justify-center h-96 bg-gray-50">
+        <div className="text-center animate-fadeIn">
+          <div className="w-16 h-16 rounded-2xl bg-blue-100 flex items-center justify-center text-3xl mx-auto mb-4 animate-pulse">
+            📄
+          </div>
+          <p className="text-gray-500 font-medium">Loading PDF...</p>
         </div>
       </div>
     );
@@ -180,60 +216,82 @@ export default function PdfSigner({ file, onSign, signing }: PdfSignerProps) {
   return (
     <div className="flex flex-col">
       {/* Toolbar */}
-      <div className="flex items-center justify-between bg-white border border-gray-200 rounded-t-xl px-4 py-2">
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between bg-gray-50 border-b border-gray-200 px-4 py-2.5">
+        {/* Left: Navigation */}
+        <div className="flex items-center gap-2">
           <button
             onClick={() => setPageNum(Math.max(1, pageNum - 1))}
             disabled={pageNum <= 1}
-            className="px-3 py-1 text-sm font-medium text-gray-700 bg-gray-100 rounded hover:bg-gray-200 disabled:opacity-50"
+            className="w-8 h-8 rounded-lg bg-white border border-gray-200 flex items-center justify-center text-gray-600 hover:bg-gray-50 hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed transition-all text-sm font-bold"
           >
-            ←
+            ‹
           </button>
-          <span className="text-sm text-gray-600">
-            Page {pageNum} / {totalPages}
-          </span>
+          <div className="flex items-center gap-1 text-sm">
+            <span className="font-semibold text-gray-900">{pageNum}</span>
+            <span className="text-gray-400">/</span>
+            <span className="text-gray-500">{totalPages}</span>
+          </div>
           <button
             onClick={() => setPageNum(Math.min(totalPages, pageNum + 1))}
             disabled={pageNum >= totalPages}
-            className="px-3 py-1 text-sm font-medium text-gray-700 bg-gray-100 rounded hover:bg-gray-200 disabled:opacity-50"
+            className="w-8 h-8 rounded-lg bg-white border border-gray-200 flex items-center justify-center text-gray-600 hover:bg-gray-50 hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed transition-all text-sm font-bold"
           >
-            →
+            ›
           </button>
         </div>
-        <div className="flex items-center gap-2">
+
+        {/* Center: Status */}
+        <div className="hidden sm:flex items-center gap-2">
+          {rectangle ? (
+            <span className="badge badge-success animate-scaleIn">
+              ✓ Area Selected
+            </span>
+          ) : (
+            <span className="text-xs text-gray-400 font-medium">
+              Draw a rectangle to place signature
+            </span>
+          )}
+        </div>
+
+        {/* Right: Zoom */}
+        <div className="flex items-center gap-1.5">
           {rectangle && (
             <button
               onClick={handleClear}
-              className="px-3 py-1 text-sm text-red-600 hover:bg-red-50 rounded"
+              className="text-xs text-red-500 hover:text-red-700 hover:bg-red-50 px-2 py-1 rounded-lg font-medium transition-all mr-1"
             >
-              Clear selection
+              Clear
             </button>
           )}
           <button
             onClick={() => setScale(Math.max(0.5, scale - 0.25))}
-            className="px-2 py-1 text-sm bg-gray-100 rounded hover:bg-gray-200"
+            className="w-7 h-7 rounded-lg bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-50 transition-all text-xs"
           >
             −
           </button>
-          <span className="text-xs text-gray-500">{Math.round(scale * 100)}%</span>
+          <span className="text-xs text-gray-500 font-medium w-10 text-center">
+            {Math.round(scale * 100)}%
+          </span>
           <button
             onClick={() => setScale(Math.min(3, scale + 0.25))}
-            className="px-2 py-1 text-sm bg-gray-100 rounded hover:bg-gray-200"
+            className="w-7 h-7 rounded-lg bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-50 transition-all text-xs"
           >
             +
           </button>
         </div>
       </div>
 
-      {/* Canvas container */}
+      {/* Canvas */}
       <div
         ref={containerRef}
-        className="relative bg-gray-100 border-x border-gray-200 overflow-auto flex justify-center"
+        className="relative bg-gray-100 overflow-auto flex justify-center"
         style={{ maxHeight: "600px" }}
       >
         <canvas
           ref={canvasRef}
-          className={`shadow-lg ${signing ? "cursor-wait" : "cursor-crosshair"}`}
+          className={`shadow-lg transition-shadow hover:shadow-xl ${
+            signing ? "cursor-wait opacity-60" : "cursor-crosshair"
+          }`}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
@@ -245,25 +303,53 @@ export default function PdfSigner({ file, onSign, signing }: PdfSignerProps) {
             }
           }}
         />
+        {/* Overlay hint */}
+        {!rectangle && !isDrawing && !signing && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="bg-white/90 backdrop-blur-sm rounded-2xl px-5 py-3 shadow-lg border border-gray-200/50 animate-fadeIn">
+              <p className="text-sm text-gray-600 font-medium flex items-center gap-2">
+                <span className="text-lg">✍️</span>
+                Click and drag to draw signature area
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Sign controls */}
-      <div className="bg-white border border-t-0 border-gray-200 rounded-b-xl px-4 py-3">
+      {/* Bottom: Sign controls */}
+      <div className="bg-white border-t border-gray-200 px-4 py-3.5">
         {!rectangle ? (
-          <p className="text-sm text-gray-500 text-center">
-            ✍️ Draw a rectangle on the PDF where you want to place your signature
+          <p className="text-sm text-gray-400 text-center font-medium">
+            Draw a rectangle on the PDF to place your signature
           </p>
         ) : (
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-green-700">
-              ✅ Signature area selected ({Math.round(rectangle.width)}×{Math.round(rectangle.height)} px)
-            </p>
+          <div className="flex items-center justify-between animate-slideUp">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center text-sm">
+                ✓
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-gray-900">
+                  Area Selected
+                </p>
+                <p className="text-xs text-gray-400">
+                  {Math.round(rectangle.width)} × {Math.round(rectangle.height)} px · Page {pageNum}
+                </p>
+              </div>
+            </div>
             <button
               onClick={handleSign}
               disabled={signing}
-              className="px-6 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 disabled:bg-gray-300 transition"
+              className="btn btn-primary"
             >
-              {signing ? "⏳ Signing..." : "🔐 Sign here"}
+              {signing ? (
+                <>
+                  <span className="animate-spin">⏳</span>
+                  Signing...
+                </>
+              ) : (
+                "🔐 Sign here"
+              )}
             </button>
           </div>
         )}

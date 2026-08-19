@@ -21,7 +21,6 @@ interface UsbKeyDetectorProps {
   selectedToken: Pkcs11Token | null;
 }
 
-// Common PKCS#11 module paths to auto-detect
 const COMMON_MODULES = [
   { name: "OpenSC", paths: ["/usr/lib/pkcs11/libopensc.so", "/usr/lib/x86_64-linux-gnu/pkcs11/opensc-pkcs11.so"] },
   { name: "SoftHSM", paths: ["/usr/lib/softhsm/libsofthsm2.so", "/usr/lib/x86_64-linux-gnu/softhsm/libsofthsm2.so"] },
@@ -36,8 +35,8 @@ export default function UsbKeyDetector({ onTokenDetected, selectedToken }: UsbKe
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState("");
   const [manualMode, setManualMode] = useState(false);
+  const [scannedModule, setScannedModule] = useState("");
 
-  // Auto-detect on mount
   useEffect(() => {
     autoDetect();
   }, []);
@@ -49,25 +48,26 @@ export default function UsbKeyDetector({ onTokenDetected, selectedToken }: UsbKe
     for (const mod of COMMON_MODULES) {
       for (const path of mod.paths) {
         try {
-          const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-          const res = await fetch(`${apiUrl}/api/pkcs11/tokens?module_path=${encodeURIComponent(path)}`);
+          const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+          const res = await fetch(`${apiBase}/api/pkcs11/tokens?module_path=${encodeURIComponent(path)}`);
           if (res.ok) {
             const data = await res.json();
             if (data.tokens && data.tokens.length > 0) {
               setTokens(data.tokens);
               setModulePath(path);
-              // Auto-select first token
-              onTokenDetected(data.tokens[0], path);
+              setScannedModule(mod.name);
               setScanning(false);
+              onTokenDetected(data.tokens[0], path);
               return;
             }
           }
         } catch {
-          // Module not found, continue
+          // Module not available, try next
         }
       }
     }
     setScanning(false);
+    setManualMode(true);
   };
 
   const handleManualScan = async () => {
@@ -75,170 +75,152 @@ export default function UsbKeyDetector({ onTokenDetected, selectedToken }: UsbKe
     setScanning(true);
     setError("");
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      const res = await fetch(`${apiUrl}/api/pkcs11/tokens?module_path=${encodeURIComponent(modulePath)}`);
-      if (!res.ok) {
-        const err = await res.json();
-        setError(err.detail || "Failed to scan");
-        setScanning(false);
-        return;
-      }
-      const data = await res.json();
-      if (data.tokens && data.tokens.length > 0) {
-        setTokens(data.tokens);
-        onTokenDetected(data.tokens[0], modulePath);
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const res = await fetch(`${apiBase}/api/pkcs11/tokens?module_path=${encodeURIComponent(modulePath)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.tokens && data.tokens.length > 0) {
+          setTokens(data.tokens);
+          onTokenDetected(data.tokens[0], modulePath);
+        } else {
+          setError("No tokens found. Make sure your key is plugged in.");
+        }
       } else {
-        setError("No tokens found. Make sure your digital key is plugged in.");
+        setError("Module not found. Check the path and try again.");
       }
-    } catch (err: any) {
-      setError(err.message || "Scan failed");
+    } catch {
+      setError("Failed to connect to PKCS#11 module.");
     }
     setScanning(false);
   };
 
-  return (
-    <div className="space-y-4">
-      {/* Auto-detect status */}
-      <div className={`rounded-xl border p-4 ${
-        selectedToken
-          ? "bg-green-50 border-green-200"
-          : scanning
-          ? "bg-yellow-50 border-yellow-200"
-          : "bg-gray-50 border-gray-200"
-      }`}>
-        <div className="flex items-center gap-3">
-          {scanning ? (
-            <div className="animate-spin text-2xl">🔑</div>
-          ) : selectedToken ? (
-            <div className="text-2xl">✅</div>
-          ) : (
-            <div className="text-2xl">🔌</div>
-          )}
-          <div className="flex-1">
-            <p className="font-medium text-gray-900">
-              {scanning
-                ? "Scanning for digital keys..."
-                : selectedToken
-                ? "Digital key detected!"
-                : "No digital key detected"}
-            </p>
-            {selectedToken && (
-              <div className="text-sm text-gray-600 mt-1">
-                <p>Device: {selectedToken.manufacturer} {selectedToken.model}</p>
-                <p>Token: {selectedToken.label}</p>
-                <p>Serial: {selectedToken.serial_number}</p>
-                {selectedToken.keys.length > 0 && (
-                  <p className="mt-1">
-                    Keys: {selectedToken.keys.map(k => (
-                      <span key={k.id} className="inline-block px-2 py-0.5 bg-green-100 text-green-800 rounded text-xs mr-1">
-                        {k.label || k.type}
-                      </span>
-                    ))}
-                  </p>
-                )}
-              </div>
-            )}
+  const handleTokenSelect = (token: Pkcs11Token) => {
+    onTokenDetected(token, modulePath);
+  };
+
+  // Scanning state
+  if (scanning) {
+    return (
+      <div className="flex items-center gap-4 p-4 bg-blue-50 rounded-2xl border border-blue-200/60">
+        <div className="relative">
+          <div className="w-12 h-12 rounded-2xl bg-blue-100 flex items-center justify-center text-2xl animate-pulse">
+            🔑
           </div>
-          {!selectedToken && !scanning && (
-            <button
-              onClick={autoDetect}
-              className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700"
-            >
-              🔄 Scan again
-            </button>
-          )}
+          <div className="absolute inset-0 rounded-2xl border-2 border-blue-400 animate-ping opacity-30" />
+        </div>
+        <div>
+          <p className="font-semibold text-blue-900 text-sm">Scanning for digital keys...</p>
+          <p className="text-blue-600 text-xs mt-0.5">Checking common PKCS#11 modules</p>
         </div>
       </div>
+    );
+  }
 
-      {/* Manual mode toggle */}
-      {!selectedToken && !scanning && (
-        <div>
+  // Token detected
+  if (selectedToken) {
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center gap-3 p-4 bg-green-50 rounded-2xl border border-green-200/60 animate-scaleIn">
+          <div className="w-12 h-12 rounded-2xl bg-green-100 flex items-center justify-center text-2xl">
+            🔐
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-green-900 text-sm">{selectedToken.label}</p>
+            <p className="text-green-600 text-xs">
+              {selectedToken.model || "PKCS#11 Token"} · {scannedModule || "Hardware"}
+            </p>
+          </div>
+          <span className="badge badge-success shrink-0">Connected</span>
+        </div>
+
+        {/* Other tokens */}
+        {tokens.length > 1 && (
+          <div>
+            <p className="text-xs text-gray-500 mb-2 font-medium">Other tokens available:</p>
+            <div className="space-y-1.5">
+              {tokens.filter((t) => t.slot_id !== selectedToken.slot_id).map((token) => (
+                <button
+                  key={token.slot_id}
+                  onClick={() => handleTokenSelect(token)}
+                  className="w-full flex items-center gap-3 p-3 rounded-xl border border-gray-200 hover:border-blue-300 hover:bg-blue-50/50 transition-all text-left"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-sm">
+                    🔑
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">{token.label}</p>
+                    <p className="text-xs text-gray-500">{token.model}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Manual mode / not found
+  return (
+    <div className="space-y-3">
+      {!manualMode ? (
+        <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-2xl border border-gray-200">
+          <div className="w-12 h-12 rounded-2xl bg-gray-100 flex items-center justify-center text-2xl">
+            🔑
+          </div>
+          <div className="flex-1">
+            <p className="font-semibold text-gray-700 text-sm">No digital key detected</p>
+            <p className="text-gray-500 text-xs mt-0.5">Plug in your USB key and try again</p>
+          </div>
           <button
-            onClick={() => setManualMode(!manualMode)}
-            className="text-sm text-blue-600 hover:text-blue-800"
+            onClick={autoDetect}
+            className="btn btn-outline btn-sm"
           >
-            {manualMode ? "← Hide manual setup" : "🔧 Enter PKCS#11 module path manually"}
+            🔄 Rescan
           </button>
-
-          {manualMode && (
-            <div className="mt-3 space-y-3">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  PKCS#11 Module Path
-                </label>
-                <input
-                  type="text"
-                  value={modulePath}
-                  onChange={(e) => setModulePath(e.target.value)}
-                  placeholder="e.g. /usr/lib/pkcs11/libopensc.so"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500"
-                />
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200/60">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center text-lg">
+                ⚠️
               </div>
+              <div>
+                <p className="font-semibold text-amber-900 text-sm">No PKCS#11 modules found</p>
+                <p className="text-amber-700 text-xs">Enter the module path manually</p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={modulePath}
+                onChange={(e) => setModulePath(e.target.value)}
+                placeholder="/path/to/pkcs11-module.so"
+                className="input flex-1 text-xs font-mono"
+              />
               <button
                 onClick={handleManualScan}
-                disabled={!modulePath || scanning}
-                className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:bg-gray-300"
+                disabled={!modulePath}
+                className="btn btn-primary btn-sm shrink-0"
               >
-                {scanning ? "Scanning..." : "🔍 Scan for tokens"}
+                Scan
               </button>
             </div>
-          )}
-        </div>
-      )}
-
-      {/* Token selection (if multiple) */}
-      {tokens.length > 1 && (
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Select token:
-          </label>
-          <div className="space-y-2">
-            {tokens.map((token) => (
-              <label
-                key={token.slot_id}
-                className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition ${
-                  selectedToken?.slot_id === token.slot_id
-                    ? "border-blue-500 bg-blue-50"
-                    : "border-gray-200 hover:border-gray-300"
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="token"
-                  checked={selectedToken?.slot_id === token.slot_id}
-                  onChange={() => onTokenDetected(token, modulePath)}
-                  className="w-4 h-4 text-blue-600"
-                />
-                <div>
-                  <p className="font-medium text-gray-900">{token.label}</p>
-                  <p className="text-sm text-gray-500">
-                    {token.manufacturer} • {token.serial_number}
-                  </p>
-                </div>
-              </label>
-            ))}
+            <button
+              onClick={() => { setManualMode(false); autoDetect(); }}
+              className="text-xs text-amber-700 hover:text-amber-900 mt-2 font-medium hover:underline"
+            >
+              ← Try auto-detect again
+            </button>
           </div>
-        </div>
-      )}
 
-      {/* Error */}
-      {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
-          ❌ {error}
-        </div>
-      )}
-
-      {/* Instructions */}
-      {!selectedToken && !scanning && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
-          <p className="font-medium mb-1">How to use a digital key:</p>
-          <ol className="list-decimal list-inside space-y-1">
-            <li>Plug in your USB digital key (YubiKey, smart card, etc.)</li>
-            <li>Click &quot;Scan again&quot; above</li>
-            <li>Select your token when detected</li>
-            <li>Draw a rectangle on the PDF where you want the signature</li>
-            <li>Click &quot;Sign here&quot; and enter your PIN when prompted</li>
-          </ol>
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-2xl p-3 text-red-700 text-sm flex items-start gap-2 animate-slideUp">
+              <span>⚠️</span>
+              <span>{error}</span>
+            </div>
+          )}
         </div>
       )}
     </div>
