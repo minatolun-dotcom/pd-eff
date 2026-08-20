@@ -105,7 +105,7 @@ export default function AuditPage() {
     <div className="h-full overflow-y-auto p-6 max-w-4xl mx-auto">
       <div className="mb-8">
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">📊 Audit Dashboard</h2>
-        <p className="text-gray-600 dark:text-gray-400 dark:text-gray-500">
+        <p className="text-gray-600 dark:text-gray-400">
           Complete history of all signing and verification operations.
           Track who signed what, when, and the verification status.
         </p>
@@ -182,29 +182,23 @@ export default function AuditPage() {
       {filteredRecords.length === 0 ? (
         <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
           <div className="text-5xl mb-4">📭</div>
-          <p className="text-gray-500 dark:text-gray-400 dark:text-gray-500">No records found</p>
+          <p className="text-gray-500 dark:text-gray-400">No records found</p>
         </div>
       ) : (
         <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
           <table className="w-full">
             <thead className="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase">
+              <tr>                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
                   Type
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase">
+                </th>                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
                   File
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase">
+                </th>                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
                   Details
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase">
+                </th>                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
                   Status
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase">
+                </th>                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
                   Date
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase">
+                </th>                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
                   Action
                 </th>
               </tr>
@@ -228,14 +222,12 @@ export default function AuditPage() {
                       {record.filename}
                     </p>
                   </td>
-                  <td className="px-6 py-4">
-                    <p className="text-sm text-gray-600 dark:text-gray-400 dark:text-gray-500">{record.details}</p>
+                  <td className="px-6 py-4">                     <p className="text-sm text-gray-600 dark:text-gray-400">{record.details}</p>
                   </td>
                   <td className="px-6 py-4">
                     <StatusBadge status={record.status} />
                   </td>
-                  <td className="px-6 py-4">
-                    <p className="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">
+                  <td className="px-6 py-4">                     <p className="text-sm text-gray-500 dark:text-gray-400">
                       {record.date
                         ? new Date(record.date).toLocaleString()
                         : "N/A"}
@@ -283,7 +275,7 @@ function StatCard({
     <div className={`rounded-xl border p-4 ${colorClasses[color] || colorClasses.blue}`}>
       <div className="text-2xl mb-2">{icon}</div>
       <p className="text-2xl font-bold text-gray-900 dark:text-white">{value}</p>
-      <p className="text-sm text-gray-600 dark:text-gray-400 dark:text-gray-500">{label}</p>
+      <p className="text-sm text-gray-600 dark:text-gray-400">{label}</p>
     </div>
   );
 }

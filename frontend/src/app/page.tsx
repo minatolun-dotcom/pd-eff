@@ -214,19 +214,19 @@ export default function SignPage() {
             </h4>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <span className="text-xs text-gray-400 font-medium">Field Name</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">Field Name</span>
                 <p className="font-mono text-sm text-gray-900 dark:text-white mt-0.5">{result.field_name}</p>
               </div>
               <div>
-                <span className="text-xs text-gray-400 font-medium">Signer</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">Signer</span>
                 <p className="text-sm text-gray-900 dark:text-white mt-0.5">{result.signer_name}</p>
               </div>
               <div>
-                <span className="text-xs text-gray-400 font-medium">Signed At</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">Signed At</span>
                 <p className="text-sm text-gray-900 dark:text-white mt-0.5">{new Date(result.timestamp).toLocaleString()}</p>
               </div>
               <div>
-                <span className="text-xs text-gray-400 font-medium">File</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">File</span>
                 <p className="text-sm text-gray-900 dark:text-white mt-0.5 truncate">{result.signed_filename}</p>
               </div>
             </div>
@@ -421,7 +421,7 @@ export default function SignPage() {
       <div className="overflow-hidden bg-gray-100 dark:bg-gray-900 flex flex-col">
         {step === "configure" ? (
           <div className="flex-1 flex items-center justify-center">
-            <div className="text-center text-gray-400 dark:text-gray-500">
+            <div className="text-center text-gray-500 dark:text-gray-400">
               <div className="text-5xl mb-3">📄</div>
               <p className="text-sm font-medium">Configure signing options, then draw signature area</p>
             </div>

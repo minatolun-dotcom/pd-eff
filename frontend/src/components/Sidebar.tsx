@@ -46,7 +46,7 @@ export default function Sidebar() {
       <div className="py-3 px-2 border-t border-gray-200/60 dark:border-gray-800/60 space-y-1">
         <ThemeToggle />
         <div className="hidden lg:flex items-center justify-center py-2">
-          <span className="text-[10px] text-gray-400 dark:text-gray-600 font-medium">v1.5.0</span>
+          <span className="text-[10px] text-gray-500 dark:text-gray-500 font-medium">v1.5.0</span>
         </div>
       </div>
     </aside>

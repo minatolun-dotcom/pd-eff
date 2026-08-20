@@ -85,7 +85,7 @@ export default function CertificatesPage() {
     <div className="h-full overflow-y-auto p-6 max-w-4xl mx-auto">
       <div className="mb-8">
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Certificates</h2>
-        <p className="text-gray-600 dark:text-gray-400 dark:text-gray-500">
+        <p className="text-gray-600 dark:text-gray-400">
           Manage digital certificates for signing PDFs. Upload a PKCS#12 file or
           generate a self-signed certificate for testing.
         </p>
@@ -135,8 +135,8 @@ export default function CertificatesPage() {
           {certificates.length === 0 ? (
             <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
               <div className="text-5xl mb-4">📜</div>
-              <p className="text-gray-500 dark:text-gray-400 dark:text-gray-500 mb-4">No certificates yet</p>
-              <p className="text-sm text-gray-400 dark:text-gray-500">
+              <p className="text-gray-500 dark:text-gray-400 mb-4">No certificates yet</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
                 Upload a PKCS#12 file or generate a self-signed certificate to get
                 started.
               </p>
@@ -154,25 +154,21 @@ export default function CertificatesPage() {
                     </div>
                     <div>
                       <h3 className="font-semibold text-gray-900 dark:text-white">{cert.name}</h3>
-                      <p className="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">{cert.filename}</p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">{cert.filename}</p>
                       <div className="mt-2 grid grid-cols-2 gap-x-8 gap-y-1 text-sm">
-                        <div>
-                          <span className="text-gray-400 dark:text-gray-500">Subject: </span>
+                        <div>                            <span className="text-gray-500 dark:text-gray-400">Subject: </span>
                           <span className="text-gray-700 dark:text-gray-300">
                             {cert.subject_cn}
                             {cert.subject_o && ` (${cert.subject_o})`}
                           </span>
                         </div>
-                        <div>
-                          <span className="text-gray-400 dark:text-gray-500">Issuer: </span>
+                        <div>                            <span className="text-gray-500 dark:text-gray-400">Issuer: </span>
                           <span className="text-gray-700 dark:text-gray-300">{cert.issuer_cn}</span>
                         </div>
-                        <div>
-                          <span className="text-gray-400 dark:text-gray-500">Algorithm: </span>
+                        <div>                            <span className="text-gray-500 dark:text-gray-400">Algorithm: </span>
                           <span className="text-gray-700 dark:text-gray-300">{cert.key_algorithm}</span>
                         </div>
-                        <div>
-                          <span className="text-gray-400 dark:text-gray-500">Expires: </span>
+                        <div>                            <span className="text-gray-500 dark:text-gray-400">Expires: </span>
                           <span className="text-gray-700 dark:text-gray-300">
                             {cert.not_valid_after
                               ? new Date(cert.not_valid_after).toLocaleDateString()
@@ -194,7 +190,7 @@ export default function CertificatesPage() {
                   </div>
                   <button
                     onClick={() => handleDelete(cert.id)}
-                    className="text-gray-400 dark:text-gray-500 hover:text-red-600 transition p-2"
+                    className="text-gray-500 dark:text-gray-400 hover:text-red-600 transition p-2"
                     title="Delete certificate"
                   >
                     🗑️

@@ -297,7 +297,7 @@ function TrustStoreSection() {
         <span>🛡️</span>
         <span className="text-xs font-bold text-gray-900 dark:text-white flex-1">Trust Store</span>
         <span className="text-[10px] text-gray-500 dark:text-gray-400">{trustStore.length} cert(s)</span>
-        <span className="text-gray-400 text-xs">{showAdd ? "▲" : "▼"}</span>
+        <span className="text-gray-500 dark:text-gray-400 text-xs">{showAdd ? "▲" : "▼"}</span>
       </button>
       {showAdd && (
         <div className="px-3 pb-3 border-t border-gray-100 dark:border-gray-800">
