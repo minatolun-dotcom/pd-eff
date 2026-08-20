@@ -376,12 +376,21 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
     };
   };
 
-  // Screen coords → PDF coords
+  // Screen coords → PDF coords (returns bottom-left)
   const screenToPdf = (sx: number, sy: number) => {
     if (!pageDim) return { px: 0, py: 0 };
     return {
       px: (sx - canvasOffset.x) / canvasScale,
       py: pageDim.height - (sy - canvasOffset.y) / canvasScale,
+    };
+  };
+
+  // Screen coords → PDF coords (returns top-left, for drag operations)
+  const screenToPdfTop = (sx: number, sy: number) => {
+    if (!pageDim) return { px: 0, pdfTopY: 0 };
+    return {
+      px: (sx - canvasOffset.x) / canvasScale,
+      pdfTopY: pageDim.height - (sy - canvasOffset.y) / canvasScale,
     };
   };
 
@@ -393,9 +402,11 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
     const rect = containerRef.current!.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
-    if (stampPos) {
-      const { sx, sy } = pdfToScreen(stampPos.x, stampPos.y);
-      setDragOffset({ x: mouseX - sx, y: mouseY - sy });
+    if (stampPos && pageDim) {
+      // Offset from the TOP-LEFT of the stamp div
+      const topSy = canvasOffset.y + (pageDim.height - stampPos.y - stampPos.h) * canvasScale;
+      const leftSx = canvasOffset.x + stampPos.x * canvasScale;
+      setDragOffset({ x: mouseX - leftSx, y: mouseY - topSy });
     }
   }, [stampPos, canvasScale, canvasOffset, pageDim]);
 
@@ -406,8 +417,11 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
     const mouseY = e.clientY - rect.top;
 
     if (dragging) {
-      const { px, py } = screenToPdf(mouseX - dragOffset.x, mouseY - dragOffset.y);
-      setStampPos({ ...stampPos, x: Math.max(0, Math.min(px, pageDim.width - stampPos.w)), y: Math.max(0, Math.min(py, pageDim.height - stampPos.h)) });
+      // mouseX/Y - dragOffset gives the TOP-LEFT of the stamp in screen coords
+      // Convert to PDF coords: pdfTopY is the TOP of the stamp, but stampPos.y stores the BOTTOM
+      const { px, pdfTopY } = screenToPdfTop(mouseX - dragOffset.x, mouseY - dragOffset.y);
+      const pdfBottomY = pdfTopY - stampPos.h;
+      setStampPos({ ...stampPos, x: Math.max(0, Math.min(px, pageDim.width - stampPos.w)), y: Math.max(0, Math.min(pdfBottomY, pageDim.height - stampPos.h)) });
     }
     if (resizing) {
       const { px, py } = screenToPdf(mouseX, mouseY);
@@ -433,9 +447,14 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
     }
   }, [dragging, resizing, handleMouseMove, handleMouseUp]);
 
-  // Screen position of stamp
+  // Screen position of stamp — use TOP-LEFT corner (stampPos.y + stampH is the top in PDF coords)
   const screenStamp = stampPos && pageDim && rendered
-    ? { ...pdfToScreen(stampPos.x, stampPos.y), w: stampPos.w * canvasScale, h: stampPos.h * canvasScale }
+    ? {
+        sx: canvasOffset.x + stampPos.x * canvasScale,
+        sy: canvasOffset.y + (pageDim.height - stampPos.y - stampPos.h) * canvasScale,
+        w: stampPos.w * canvasScale,
+        h: stampPos.h * canvasScale,
+      }
     : null;
 
   return (
