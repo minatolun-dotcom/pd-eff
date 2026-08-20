@@ -361,6 +361,7 @@ export default function SignPage() {
                       {certificates.map((cert) => (
                         <label
                           key={cert.id}
+                          onClick={() => setSelectedCert(cert.id)}
                           className={`flex items-center gap-2.5 p-2.5 rounded-xl border-2 cursor-pointer transition-all text-xs ${
                             selectedCert === cert.id
                               ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
