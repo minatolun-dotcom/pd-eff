@@ -430,7 +430,7 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
       mousePosRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
       setZoom(prev => {
         const delta = e.deltaY > 0 ? -0.1 : 0.1;
-        return Math.max(0.3, Math.min(5, +(prev + delta).toFixed(2)));
+        return Math.max(1, Math.min(5, +(prev + delta).toFixed(2)));
       });
     };
     container.addEventListener("wheel", handleWheel, { passive: false });
@@ -660,7 +660,7 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
       {/* Zoom controls */}
       <div className="absolute top-4 left-4 z-40 flex items-center gap-1 bg-white/90 dark:bg-gray-800/90 rounded-lg shadow-lg px-2 py-1">
         <button
-          onClick={() => setZoom(z => Math.max(0.3, z - 0.2))}
+          onClick={() => setZoom(z => Math.max(1, z - 0.2))}
           className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm font-bold"
           title="Zoom out"
         >
