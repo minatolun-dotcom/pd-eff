@@ -12,6 +12,7 @@ from typing import Optional
 from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
+from urllib.parse import quote
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
@@ -885,7 +886,7 @@ async def stamp_verified_pdf(
         "id": record.id,
         "verification": result,
         "stamped_filename": stamped_name,
-        "download_url": f"/api/download-file/{stamped_name}",
+        "download_url": f"/api/download-file/{quote(stamped_name)}",
     }
 
 
@@ -940,7 +941,7 @@ async def encrypt_pdf_endpoint(
     encrypted_name = Path(result["output_path"]).name
     return {
         "encrypted_filename": encrypted_name,
-        "download_url": f"/api/download-file/{encrypted_name}",
+        "download_url": f"/api/download-file/{quote(encrypted_name)}",
         **{k: v for k, v in result.items() if k != "output_path"},
     }
 
@@ -948,12 +949,14 @@ async def encrypt_pdf_endpoint(
 @app.get("/api/download-file/{filename}")
 async def download_file(filename: str):
     """Download any file from the signed directory."""
-    file_path = SIGNED_DIR / filename
+    from urllib.parse import unquote
+    decoded_name = unquote(filename)
+    file_path = SIGNED_DIR / decoded_name
     if not os.path.exists(file_path):
-        raise HTTPException(404, "File not found")
+        raise HTTPException(404, f"File not found: {decoded_name}")
     return FileResponse(
         file_path,
-        filename=filename,
+        filename=decoded_name,
         media_type="application/pdf",
     )
 

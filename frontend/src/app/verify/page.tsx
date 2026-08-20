@@ -154,7 +154,7 @@ export default function VerifyPage() {
       </div>
 
       {/* Right panel - PDF Preview with draggable stamp */}
-      <div className="flex-1 relative">
+      <div className="flex-1 relative flex flex-col">
         {file && result ? (
           <PdfPreviewWithStamp result={result} file={file} hasUntrusted={hasUntrusted} stampPos={stampPos} setStampPos={setStampPos} />
         ) : (
@@ -427,7 +427,7 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
   return (
     <div
       ref={containerRef}
-      className="flex-1 relative bg-gray-200 dark:bg-gray-800 overflow-hidden"
+      className="flex-1 min-h-0 relative bg-gray-200 dark:bg-gray-800 overflow-hidden"
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
     >
@@ -542,9 +542,18 @@ function ExportButton({ file, result, hasUntrusted, stampPos }: { file: File | n
 
   if (exportResult) {
     return (
-      <a href={`${API_BASE}${exportResult.download_url}`} className="btn btn-primary flex-1 text-xs" download>
+      <button onClick={async () => {
+        const res = await fetch(`${API_BASE}${exportResult.download_url}`);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = exportResult.stamped_filename || "verified.pdf";
+        a.click();
+        URL.revokeObjectURL(url);
+      }} className="btn btn-primary flex-1 text-xs">
         ⬇️ Download Verified
-      </a>
+      </button>
     );
   }
 
