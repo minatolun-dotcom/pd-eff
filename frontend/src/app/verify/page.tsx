@@ -339,7 +339,6 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
   const [canvasScale, setCanvasScale] = useState(1);
   const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
-  const [displayZoom, setDisplayZoom] = useState(1); // CSS transform zoom (instant)
   // wrapperOffset is now computed from zoom (center-based), not from cursor position
   const [pdfLoaded, setPdfLoaded] = useState(false);
   const pageDim = result.page_dimensions;
@@ -404,10 +403,7 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
     return () => window.removeEventListener('resize', handleResize);
   }, [pdfLoaded, renderPage]);
 
-  // Sync displayZoom when zoom changes
-  useEffect(() => {
-    setDisplayZoom(zoom);
-  }, [zoom]);
+
 
   // Scroll wheel zoom — zoom toward center
   useEffect(() => {
@@ -471,7 +467,7 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
   }, [result, pageDim]);
 
   // Effective scale = canvas scale × CSS zoom
-  const effectiveScale = canvasScale * displayZoom;
+  const effectiveScale = canvasScale * zoom;
 
   // PDF coords → screen coords (top-left of stamp)
   const pdfToScreen = (px: number, py: number) => {
@@ -488,8 +484,8 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     return {
-      x: canvas.width * (1 - displayZoom) / 2,
-      y: canvas.height * (1 - displayZoom) / 2,
+      x: canvas.width * (1 - zoom) / 2,
+      y: canvas.height * (1 - zoom) / 2,
     };
   })();
 
@@ -576,9 +572,8 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
         style={{
           left: canvasOffset.x + centerWrapperOffset.x,
           top: canvasOffset.y + centerWrapperOffset.y,
-          transform: `scale(${displayZoom})`,
+          transform: `scale(${zoom})`,
           transformOrigin: 'top left',
-          transition: 'transform 0.1s ease-out',
         }}
       >
         <canvas
