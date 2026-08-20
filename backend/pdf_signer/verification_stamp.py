@@ -137,61 +137,91 @@ def _find_image_blocks(page_obj, page_width, page_height):
 
 
 def _find_stamp_position(widget_rect, text_blocks, image_blocks, stamp_w, stamp_h, page_width, page_height):
-    """Find the best position for the stamp near the widget, avoiding overlap."""
-    if not widget_rect:
-        return page_width - stamp_w - 15, page_height - stamp_h - 15
+    """Find the best position for the stamp — scan the ENTIRE page for clear areas.
+    
+    Strategy:
+    1. Generate a grid of candidate positions across the page
+    2. Score each by overlap with text and images
+    3. Prefer positions BELOW the signature area (bottom of page)
+    4. Break ties by proximity to the widget
+    """
+    # Collect all occupied rectangles (text + images + widget)
+    occupied = []
+    for b in text_blocks:
+        occupied.append((b["x1"], b["y1"], b["x2"], b["y2"]))
+    for b in image_blocks:
+        occupied.append((b["x1"], b["y1"], b["x2"], b["y2"]))
+    if widget_rect:
+        occupied.append(widget_rect)
 
-    wx, wy, ww, wh = widget_rect
+    # Find widget center for proximity scoring
+    wcx = (widget_rect[0] + widget_rect[2]) / 2 if widget_rect else page_width / 2
+    wcy = (widget_rect[1] + widget_rect[3]) / 2 if widget_rect else page_height / 2
 
-    # Generate candidate positions around the widget
-    candidates = [
-        # Left of widget
-        (wx - stamp_w - 5, wy - (stamp_h - wh) / 2),
-        # Right of widget
-        (wx + ww + 5, wy - (stamp_h - wh) / 2),
-        # Above widget
-        (wx - (stamp_w - ww) / 2, wy + wh + 5),
-        # Below widget
-        (wx - (stamp_w - ww) / 2, wy - stamp_h - 5),
-        # Above-left
-        (wx - stamp_w - 5, wy + wh + 5),
-        # Above-right
-        (wx + ww + 5, wy + wh + 5),
-        # Below-left
-        (wx - stamp_w - 5, wy - stamp_h - 5),
-        # Below-right
-        (wx + ww + 5, wy - stamp_h - 5),
-        # Directly on widget (last resort)
-        (wx, wy - (stamp_h - wh) / 2),
-        # Offset left from widget
-        (wx - stamp_w, wy),
-    ]
+    # Scan a grid across the page (step=20 for performance)
+    step = 20
+    candidates = []
+    for sy in range(int(stamp_h) + 5, int(page_height) - 5, step):
+        for sx in range(5, int(page_width - stamp_w) - 5, step):
+            candidates.append((sx, sy))
+
+    # Also add candidates near the widget (finer grid)
+    if widget_rect:
+        wx, wy, ww, wh = widget_rect
+        for dy in range(-int(stamp_h) - 30, int(wh + stamp_h + 30), 10):
+            for dx in range(-int(stamp_w) - 30, int(ww + stamp_w + 30), 10):
+                nx = int(wx + dx)
+                ny = int(wy + dy)
+                if 0 <= nx <= page_width - stamp_w and 0 <= ny <= page_height - stamp_h:
+                    candidates.append((nx, ny))
 
     best_pos = None
-    best_overlap = float("inf")
+    best_score = float("inf")
 
     for sx, sy in candidates:
-        # Clamp to page bounds
-        sx = max(5, min(sx, page_width - stamp_w - 5))
-        sy = max(5, min(sy, page_height - stamp_h - 5))
-
-        # Calculate overlap with text blocks
-        total_overlap = 0
         stamp_rect = (sx, sy, sx + stamp_w, sy + stamp_h)
 
-        for block in text_blocks:
-            overlap = _rect_overlap(stamp_rect, (block["x1"], block["y1"], block["x2"], block["y2"]))
-            total_overlap += overlap
+        # Calculate total overlap area
+        total_overlap = 0
+        for rect in occupied:
+            total_overlap += _rect_overlap(stamp_rect, rect)
 
-        for block in image_blocks:
-            overlap = _rect_overlap(stamp_rect, (block["x1"], block["y1"], block["x2"], block["y2"]))
-            total_overlap += overlap
+        # Prefer positions BELOW the widget (lower y = further down page)
+        below_bonus = 0
+        if widget_rect and sy + stamp_h < widget_rect[1]:
+            below_bonus = 500  # Strongly prefer below
 
-        if total_overlap < best_overlap:
-            best_overlap = total_overlap
+        # Prefer positions near the widget (closer = better)
+        scx = sx + stamp_w / 2
+        scy = sy + stamp_h / 2
+        dist = ((scx - wcx) ** 2 + (scy - wcy) ** 2) ** 0.5
+
+        # Score: lower is better (overlap is bad, distance is slightly bad, below is good)
+        score = total_overlap * 10 + dist * 0.5 - below_bonus
+
+        if score < best_score:
+            best_score = score
             best_pos = (sx, sy)
 
-    return best_pos if best_pos else (wx, wy - stamp_h - 5)
+    # If no zero-overlap position found, try with relaxed constraints
+    if best_pos and best_score > 0:
+        # Find the position with minimum overlap
+        min_overlap_pos = None
+        min_overlap = float("inf")
+        for sx, sy in candidates:
+            stamp_rect = (sx, sy, sx + stamp_w, sy + stamp_h)
+            total_overlap = sum(_rect_overlap(stamp_rect, r) for r in occupied)
+            if total_overlap < min_overlap:
+                min_overlap = total_overlap
+                min_overlap_pos = (sx, sy)
+        if min_overlap_pos:
+            best_pos = min_overlap_pos
+
+    if not best_pos:
+        # Absolute fallback: bottom-right corner
+        best_pos = (int(page_width - stamp_w - 15), 15)
+
+    return best_pos
 
 
 def _rect_overlap(r1, r2):

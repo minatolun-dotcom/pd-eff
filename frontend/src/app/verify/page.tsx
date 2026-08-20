@@ -340,15 +340,27 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
     return () => { cancelled = true; };
   }, [file]);
 
-  // Initialize stamp position
+  // Initialize stamp position — place BELOW the signature widget, in clear space
   useEffect(() => {
     if (!stampPos && result.signatures.length > 0 && pageDim) {
       const sig = result.signatures[0];
       const pos = sig.details?.position;
       if (pos) {
-        setStampPos({ x: Math.max(10, pos.x1 - 220), y: pos.y1 - 10, w: 210, h: 80 });
+        // Place stamp below the widget (y1 is the bottom of widget in PDF coords)
+        // with enough gap to avoid overlapping nearby text
+        const stampW = 210;
+        const stampH = 80;
+        // Position below the widget with a 15-unit gap
+        const sy = Math.max(5, pos.y1 - stampH - 15);
+        // Center horizontally relative to widget, clamped to page bounds
+        const sx = Math.max(5, Math.min(
+          (pos.x1 + pos.x2) / 2 - stampW / 2,
+          pageDim.width - stampW - 5
+        ));
+        setStampPos({ x: sx, y: sy, w: stampW, h: stampH });
       } else {
-        setStampPos({ x: pageDim.width - 230, y: pageDim.height - 120, w: 210, h: 80 });
+        // No position data — place at bottom-right
+        setStampPos({ x: pageDim.width - 230, y: 15, w: 210, h: 80 });
       }
     }
   }, [result, pageDim]);
