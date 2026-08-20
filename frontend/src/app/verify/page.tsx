@@ -436,7 +436,6 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
     if (!pos) return;
 
     const wx = pos.x1;
-    const wy = pos.y1;
     const ww = pos.x2 - pos.x1;
     const wh = pos.y2 - pos.y1;
 
@@ -445,27 +444,9 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
     const cw = ww * canvasScale;
     const ch = wh * canvasScale;
 
+    // Just white-out the old widget — the draggable HTML overlay shows the verified stamp
     ctx.fillStyle = "white";
     ctx.fillRect(cx - 2, cy - 2, cw + 4, ch + 4);
-
-    const signerName = sig?.signer?.common_name || "Unknown";
-    const fontSize = Math.max(8, Math.min(11, cw / 18));
-    const smallFont = Math.max(6, fontSize - 2);
-
-    ctx.strokeStyle = "#16a34a";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(cx + cw - 18, cy + ch * 0.45);
-    ctx.lineTo(cx + cw - 13, cy + ch * 0.7);
-    ctx.lineTo(cx + cw - 4, cy + ch * 0.25);
-    ctx.stroke();
-
-    ctx.fillStyle = "#111";
-    ctx.font = `bold ${fontSize}px sans-serif`;
-    ctx.fillText("Signature valid", cx + 4, cy + fontSize + 2);
-    ctx.font = `${smallFont}px sans-serif`;
-    ctx.fillStyle = "#555";
-    ctx.fillText(signerName.substring(0, 25), cx + 4, cy + fontSize + smallFont + 6);
 
   }, [rendered, result, pageDim, canvasScale]);
 
