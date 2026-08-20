@@ -6,6 +6,7 @@ Supports:
 - Custom trust store validation
 - Full certificate chain extraction
 """
+import concurrent.futures
 import hashlib
 import logging
 from datetime import datetime, timezone
@@ -17,6 +18,9 @@ from pyhanko.sign.validation.settings import KeyUsageConstraints
 from pyhanko_certvalidator import ValidationContext
 
 logger = logging.getLogger(__name__)
+
+# Reuse a single thread pool for validation operations
+_VAL_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=2)
 
 
 def verify_pdf(pdf_path: str, trust_roots: list = None, trusted_pems: list = None) -> dict:
@@ -116,8 +120,6 @@ def _validate_single_signature(reader, sig_obj, vc) -> dict:
 
     # ── Standard PyHanko validation for pkcs7.detached / pkcs7.sha256 ──
     try:
-        import concurrent.futures
-
         def _validate():
             return validate_pdf_signature(
                 sig_obj,
@@ -127,8 +129,7 @@ def _validate_single_signature(reader, sig_obj, vc) -> dict:
                 ),
             )
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            status = pool.submit(_validate).result(timeout=15)
+        status = _VAL_POOL.submit(_validate).result(timeout=15)
 
         sig_info["intact"] = status.intact
         sig_info["valid"] = status.valid
@@ -323,7 +324,6 @@ def _verify_pkcs7_sha1(reader, sig_obj, sig_info, vc) -> dict:
         # ── Trust verification ───────────────────────────────────────────
         if signer_cert is not None and vc:
             try:
-                import concurrent.futures
                 from pyhanko_certvalidator import CertificateValidator
 
                 def _check_trust():
@@ -336,8 +336,7 @@ def _verify_pkcs7_sha1(reader, sig_obj, sig_info, vc) -> dict:
                         key_usage={"digital_signature", "non_repudiation"}
                     )
 
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                    pool.submit(_check_trust).result(timeout=10)
+                _VAL_POOL.submit(_check_trust).result(timeout=10)
                 sig_info["trust_status"] = "VALID"
             except Exception as trust_err:
                 sig_info["trust_status"] = f"UNTRUSTED ({str(trust_err)[:80]})"

@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
 
 type Theme = "light" | "dark" | "system";
 
@@ -67,11 +67,6 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setThemeState(t);
     localStorage.setItem("pd-eff-theme", t);
   };
-
-  // Prevent flash: render nothing until mounted
-  if (!mounted) {
-    return <>{children}</>;
-  }
 
   return (
     <ThemeContext.Provider value={{ theme, resolved, setTheme }}>

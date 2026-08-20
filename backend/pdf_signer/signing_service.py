@@ -13,13 +13,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from pyhanko.sign import signers, fields
-from pyhanko.sign.fields import SigFieldSpec
 from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
 from pyhanko.pdf_utils.reader import PdfFileReader
 from pyhanko import stamp
 from pyhanko.sign.signers import PdfSignatureMetadata, SimpleSigner
 
+import concurrent.futures
+
 from .config import SIGNED_DIR
+
+# Reuse a single thread pool for signing operations
+_SIGN_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=2)
 
 
 # Common RFC 3161 timestamp servers
@@ -128,12 +132,10 @@ def sign_pdf(
         )
 
         with open(output_path, "wb") as outf:
-            import concurrent.futures
             # Run signing in a thread to avoid event loop conflicts
             def _do_sign():
                 pdf_signer.sign_pdf(w, output=outf)
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                pool.submit(_do_sign).result()
+            _SIGN_POOL.submit(_do_sign).result()
 
     return {
         "output_path": output_path,
@@ -258,11 +260,9 @@ def get_pdf_info(pdf_path: str) -> dict:
                     try:
                         from pyhanko.sign.validation import validate_pdf_signature
                         from pyhanko_certvalidator import ValidationContext
-                        import concurrent.futures
                         def _val(s):
                             return validate_pdf_signature(s, ValidationContext())
-                        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                            status = pool.submit(_val, sig).result(timeout=10)
+                        status = _SIGN_POOL.submit(_val, sig).result(timeout=10)
                         sig_info["intact"] = status.intact
                         sig_info["valid"] = status.valid
                         if status.signing_cert:

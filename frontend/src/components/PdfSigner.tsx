@@ -30,6 +30,10 @@ export default function PdfSigner({ file, onSign, signing }: PdfSignerProps) {
   const [rectangle, setRectangle] = useState<Rectangle | null>(null);
   const [previewRect, setPreviewRect] = useState<Rectangle | null>(null);
 
+  // Offscreen canvas for cached PDF render (avoids re-render on every mouse move)
+  const offscreenRef = useRef<HTMLCanvasElement | null>(null);
+  const renderedPageRef = useRef<number>(-1);
+
   // Load PDF
   useEffect(() => {
     let cancelled = false;
@@ -54,29 +58,7 @@ export default function PdfSigner({ file, onSign, signing }: PdfSignerProps) {
     return () => { cancelled = true; };
   }, [file]);
 
-  // Render page
-  useEffect(() => {
-    if (!pdf || !canvasRef.current) return;
-    async function renderPage() {
-      try {
-        const page = await pdf.getPage(pageNum);
-        const viewport = page.getViewport({ scale });
-        const canvas = canvasRef.current!;
-        const context = canvas.getContext("2d")!;
-        canvas.height = viewport.height;
-        canvas.width = viewport.width;
-        await page.render({ canvasContext: context, viewport }).promise;
-        if (rectangle) {
-          drawRectangle(context, rectangle);
-        }
-      } catch (err) {
-        console.error("Failed to render page:", err);
-      }
-    }
-    renderPage();
-  }, [pdf, pageNum, scale, rectangle]);
-
-  const drawRectangle = (ctx: CanvasRenderingContext2D, rect: Rectangle) => {
+  const drawRectangle = useCallback((ctx: CanvasRenderingContext2D, rect: Rectangle) => {
     // Shadow
     ctx.shadowColor = "rgba(37, 99, 235, 0.3)";
     ctx.shadowBlur = 8;
@@ -116,7 +98,7 @@ export default function PdfSigner({ file, onSign, signing }: PdfSignerProps) {
     ctx.fillStyle = "#2563eb";
     ctx.font = "bold 11px system-ui, sans-serif";
     ctx.fillText("✍️ Signature", rect.x + 6, rect.y + 16);
-  };
+  }, []);
 
   const getCanvasCoords = (e: React.MouseEvent) => {
     const canvas = canvasRef.current;
@@ -137,6 +119,51 @@ export default function PdfSigner({ file, onSign, signing }: PdfSignerProps) {
     setPreviewRect(null);
   };
 
+  // Render PDF page to offscreen canvas (cached, only re-renders on page/zoom change)
+  const renderToOffscreen = useCallback(async () => {
+    if (!pdf || !canvasRef.current) return;
+    const canvas = canvasRef.current;
+    const page = await pdf.getPage(pageNum);
+    const viewport = page.getViewport({ scale });
+
+    // Create or resize offscreen canvas
+    if (!offscreenRef.current) {
+      offscreenRef.current = document.createElement("canvas");
+    }
+    const off = offscreenRef.current;
+    off.width = viewport.width;
+    off.height = viewport.height;
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+
+    const offCtx = off.getContext("2d")!;
+    offCtx.clearRect(0, 0, off.width, off.height);
+    await page.render({ canvasContext: offCtx, viewport }).promise;
+    renderedPageRef.current = pageNum;
+
+    // Copy to visible canvas
+    const ctx = canvas.getContext("2d")!;
+    ctx.drawImage(off, 0, 0);
+  }, [pdf, pageNum, scale]);
+
+  // Restore from offscreen cache + draw rectangle overlay (fast, no PDF re-render)
+  const restoreAndDraw = useCallback((rect: Rectangle | null) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx || !offscreenRef.current) return;
+    ctx.drawImage(offscreenRef.current, 0, 0);
+    if (rect) drawRectangle(ctx, rect);
+  }, [drawRectangle]);
+
+  // Render page (uses offscreen cache for fast mouse move)
+  useEffect(() => {
+    if (!pdf || !canvasRef.current) return;
+    renderToOffscreen().then(() => {
+      if (rectangle) restoreAndDraw(rectangle);
+    }).catch(err => console.error("Failed to render page:", err));
+  }, [pdf, pageNum, scale, rectangle, renderToOffscreen, restoreAndDraw]);
+
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!isDrawing || !startPoint) return;
     const coords = getCanvasCoords(e);
@@ -145,20 +172,7 @@ export default function PdfSigner({ file, onSign, signing }: PdfSignerProps) {
     const width = Math.abs(coords.x - startPoint.x);
     const height = Math.abs(coords.y - startPoint.y);
     setPreviewRect({ x, y, width, height });
-
-    const canvas = canvasRef.current;
-    if (canvas) {
-      const ctx = canvas.getContext("2d");
-      if (ctx) {
-        pdf.getPage(pageNum).then((page: any) => {
-          const viewport = page.getViewport({ scale });
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          page.render({ canvasContext: ctx, viewport }).promise.then(() => {
-            drawRectangle(ctx, { x, y, width, height });
-          });
-        });
-      }
-    }
+    restoreAndDraw({ x, y, width, height });
   };
 
   const handleMouseUp = (e: React.MouseEvent) => {
@@ -183,15 +197,7 @@ export default function PdfSigner({ file, onSign, signing }: PdfSignerProps) {
   const handleClear = () => {
     setRectangle(null);
     setPreviewRect(null);
-    // Re-render page without rectangle
-    if (pdf && canvasRef.current) {
-      pdf.getPage(pageNum).then((page: any) => {
-        const canvas = canvasRef.current!;
-        const ctx = canvas.getContext("2d")!;
-        const viewport = page.getViewport({ scale });
-        page.render({ canvasContext: ctx, viewport });
-      });
-    }
+    restoreAndDraw(null);
   };
 
   const handleSign = () => {

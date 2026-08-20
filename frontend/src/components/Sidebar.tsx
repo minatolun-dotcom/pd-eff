@@ -24,7 +24,7 @@ export default function Sidebar() {
       </a>
 
       {/* Navigation */}
-      <nav className="flex-1 py-3 px-2 space-y-1">
+      <nav className="flex-1 py-3 px-2 space-y-1" aria-label="Main navigation">
         {navItems.map(({ href, icon, label, title }) => {
           const isActive = href === "/" ? pathname === "/" : pathname.startsWith(href);
           return (

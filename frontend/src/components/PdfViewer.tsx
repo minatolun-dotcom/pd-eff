@@ -102,6 +102,7 @@ export default function PdfViewer({ url, className = "" }: PdfViewerProps) {
           <button
             onClick={() => setPageNum(Math.max(1, pageNum - 1))}
             disabled={pageNum <= 1}
+            aria-label="Previous page"
             className="px-3 py-1 text-sm font-medium text-gray-700 bg-gray-100 rounded hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             ← Prev
@@ -112,6 +113,7 @@ export default function PdfViewer({ url, className = "" }: PdfViewerProps) {
           <button
             onClick={() => setPageNum(Math.min(totalPages, pageNum + 1))}
             disabled={pageNum >= totalPages}
+            aria-label="Next page"
             className="px-3 py-1 text-sm font-medium text-gray-700 bg-gray-100 rounded hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Next →
