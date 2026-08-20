@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import Link from "next/link";
 import { verifyPdf, VerificationResult } from "@/lib/api";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -11,7 +10,7 @@ export default function VerifyPage() {
   const [result, setResult] = useState<VerificationResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [dragOver, setDragOver] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   const handleFile = (f: File) => {
     if (!f.name.toLowerCase().endsWith(".pdf")) {
@@ -23,8 +22,8 @@ export default function VerifyPage() {
     setError(null);
   };
 
-  const handleVerify = async (f?: File | React.MouseEvent) => {
-    const target = (f && 'name' in f) ? f : file;
+  const handleVerify = async (f?: File) => {
+    const target = f || file;
     if (!target) return;
     setLoading(true);
     setError(null);
@@ -51,125 +50,152 @@ export default function VerifyPage() {
     setError(null);
   };
 
-  const hasUntrusted = result?.signatures?.some(
+  const hasUntrusted = result ? result.signatures?.some(
     (s) => s.intact && s.trust_status !== "VALID"
-  );
+  ) : undefined;
 
-  // Stamp position state — shared between preview and export
+  // Stamp position state
   const [stampPos, setStampPos] = useState<{x:number;y:number;w:number;h:number} | null>(null);
 
-  return (
-    <div className="flex h-full">
-      {/* Left panel - Results */}
-      <div className="w-[380px] shrink-0 border-r border-gray-200/60 dark:border-gray-800/60 flex flex-col overflow-y-auto">
-        <div className="p-4 space-y-4">
-          <div>
-            <h1 className="text-lg font-bold text-gray-900 dark:text-white">
-              Verify Signatures
+  // ─── Upload Screen (no file selected) ────────────────────────
+  if (!file) {
+    return (
+      <div className="h-full flex items-center justify-center p-8">
+        <div className="w-full max-w-2xl animate-fadeIn">
+          <div className="text-center mb-8">
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+              Verify a PDF Document
             </h1>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            <p className="text-gray-500 dark:text-gray-400 text-base">
               Upload a signed PDF to verify its digital signatures and integrity.
             </p>
           </div>
 
-          {!result ? (
-            <>
-              {/* Upload area */}
-              <div
-                onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-                onDragLeave={() => setDragOver(false)}
-                onDrop={(e) => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); }}
-                className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all ${
-                  dragOver
-                    ? "border-blue-500 bg-blue-50 dark:bg-blue-950/30"
-                    : "border-gray-300 dark:border-gray-700 hover:border-blue-400"
-                }`}
-                onClick={() => document.getElementById("verify-input")?.click()}
-              >
-                <input
-                  id="verify-input"
-                  type="file"
-                  accept=".pdf"
-                  className="hidden"
-                  onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
-                />
-                <div className="text-3xl mb-2">🔍</div>
-                <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
-                  {file ? file.name : "Drop PDF or click to browse"}
-                </p>
-                {file && (
-                  <p className="text-[10px] text-gray-500 mt-1">
-                    {(file.size / 1024).toFixed(0)} KB · Ready to verify
-                  </p>
-                )}
-              </div>
-
-              {error && (
-                <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-xl p-3">
-                  <p className="text-xs text-red-600 dark:text-red-400 font-medium">⚠️ {error}</p>
+          <div
+            className={`card p-12 transition-all duration-300 ${
+              isDragging ? "active border-blue-400 bg-blue-50 dark:bg-blue-900/20" : ""
+            }`}
+            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={(e) => { e.preventDefault(); setIsDragging(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
+          >
+            <label className="flex flex-col items-center justify-center w-full h-64 cursor-pointer group">
+              <div className="relative mb-5">
+                <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-green-50 dark:from-green-900/20 to-emerald-100 dark:to-emerald-900/20 flex items-center justify-center text-4xl group-hover:scale-110 transition-transform duration-300">
+                  ✅
                 </div>
-              )}
-
-              <button
-                onClick={handleVerify}
-                disabled={!file || loading}
-                className="w-full btn btn-primary text-sm"
-              >
-                {loading ? "⏳ Verifying..." : "✅ Verify Signatures"}
-              </button>
-            </>
-          ) : (
-            <>
-              {/* Verification results */}
-              <div className={`rounded-xl p-3 ${
-                result.is_valid
-                  ? "bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800"
-                  : hasUntrusted
-                  ? "bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800"
-                  : "bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800"
-              }`}>
-                <div className="flex items-center gap-2">
-                  <span className="text-lg">
-                    {result.is_valid ? "✅" : hasUntrusted ? "⚠️" : "❌"}
-                  </span>
-                  <div>
-                    <p className="text-xs font-bold text-gray-900 dark:text-white">
-                      {result.is_valid ? "All Signatures Valid" : hasUntrusted ? "Untrusted Signatures" : "Invalid Signatures"}
-                    </p>
-                    <p className="text-[10px] text-gray-600 dark:text-gray-400">
-                      {result.filename} · {result.signature_count} sig(s)
-                    </p>
-                  </div>
+                <div className="absolute -bottom-1 -right-1 w-7 h-7 rounded-xl bg-green-500 text-white flex items-center justify-center text-sm shadow-lg shadow-green-500/30 group-hover:rotate-90 transition-transform duration-300">
+                  +
                 </div>
               </div>
+              <p className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-1">
+                {isDragging ? "Drop your PDF here" : "Drop a signed PDF here or click to upload"}
+              </p>
+              <p className="text-sm text-gray-400 dark:text-gray-500">
+                PDF files up to 50MB
+              </p>
+              <input
+                type="file"
+                accept=".pdf"
+                className="hidden"
+                onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
+              />
+            </label>
+          </div>
 
-              {/* Signature cards */}
-              {result.signatures.map((sig, i) => (
-                <SignatureCard key={i} sig={sig} index={i} />
-              ))}
-
-              {/* Trust Store */}
-              <TrustStoreSection />
-
-              {/* Actions */}
-              <div className="flex gap-2">
-                <button onClick={reset} className="btn btn-outline flex-1 text-xs">🔍 Verify Another</button>
-                <ExportButton file={file} result={result} hasUntrusted={hasUntrusted} stampPos={stampPos} />
-              </div>
-            </>
+          {error && (
+            <div className="mt-4 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-xl p-4">
+              <p className="text-sm text-red-600 dark:text-red-400 font-medium">⚠️ {error}</p>
+            </div>
           )}
         </div>
       </div>
+    );
+  }
 
-      {/* Right panel - PDF Preview with draggable stamp */}
-      <div className="flex-1 relative flex flex-col">
-        {file && result ? (
-          <PdfPreviewWithStamp result={result} file={file} hasUntrusted={hasUntrusted} stampPos={stampPos} setStampPos={setStampPos} />
-        ) : (
-          <div className="flex items-center justify-center h-full text-gray-400 text-sm">
-            Upload a PDF to preview
+  // ─── Loading Screen ──────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="h-full flex items-center justify-center p-8">
+        <div className="text-center animate-fadeIn">
+          <div className="w-16 h-16 rounded-2xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-3xl mx-auto mb-4 animate-pulse">
+            🔍
           </div>
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Verifying Signatures...</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400">{file.name}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Verified — side-by-side layout ──────────────────────────
+  if (!result) return null;
+
+  return (
+    <div className="h-full grid" style={{ gridTemplateColumns: '1fr 340px' }}>
+      {/* ─── Left: PDF Preview (big) ────────────────── */}
+      <div className="relative flex flex-col overflow-hidden bg-gray-100 dark:bg-gray-900">
+        {result && (
+          <PdfPreviewWithStamp result={result} file={file} hasUntrusted={hasUntrusted} stampPos={stampPos} setStampPos={setStampPos} />
         )}
+      </div>
+
+      {/* ─── Right: Cards ──────────────────────────── */}
+      <div className="border-l border-gray-200/60 dark:border-gray-800/60 overflow-y-auto bg-white dark:bg-gray-950">
+        <div className="p-5 space-y-4">
+
+          {/* File info */}
+          <div className="flex items-center gap-3 bg-green-50 dark:bg-green-900/15 border border-green-200 dark:border-green-800/60 rounded-xl px-4 py-2.5">
+            <span className="text-lg">✅</span>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-green-900 dark:text-green-300 text-sm truncate">{file.name}</p>
+              <p className="text-green-600 dark:text-green-400 text-xs">{(file.size / 1024).toFixed(0)} KB · Verified</p>
+            </div>
+            <button onClick={reset} className="text-green-600 hover:text-green-800 text-xs font-medium">
+              Change
+            </button>
+          </div>
+
+          {/* Status banner */}
+          <div className={`rounded-xl p-3 ${
+            result!.is_valid
+              ? "bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800"
+              : hasUntrusted
+              ? "bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800"
+              : "bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800"
+          }`}>
+            <div className="flex items-center gap-2">
+              <span className="text-lg">
+                {result!.is_valid ? "✅" : hasUntrusted ? "⚠️" : "❌"}
+              </span>
+              <div>
+                <p className="text-xs font-bold text-gray-900 dark:text-white">
+                  {result!.is_valid ? "All Signatures Valid" : hasUntrusted ? "Untrusted Signatures" : "Invalid Signatures"}
+                </p>
+                <p className="text-[10px] text-gray-600 dark:text-gray-400">
+                  {result!.signature_count} signature(s) verified
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Signature cards */}
+          {result!.signatures.map((sig, i) => (
+            <SignatureCard key={i} sig={sig} index={i} />
+          ))}
+
+          {/* Trust Store */}
+          <TrustStoreSection />
+
+          {/* Actions */}
+          <div className="flex gap-2">
+            <button onClick={reset} className="btn btn-outline flex-1 text-xs">
+              🔍 Verify Another
+            </button>
+            <ExportButton file={file} result={result} hasUntrusted={hasUntrusted} stampPos={stampPos} />
+          </div>
+
+        </div>
       </div>
     </div>
   );
@@ -195,7 +221,7 @@ function SignatureCard({ sig, index }: { sig: any; index: number }) {
           <p className="text-xs font-bold text-gray-900 dark:text-white truncate">
             {sig.signer?.common_name || "Unknown"}
           </p>
-          <p className="text-[10px] text-gray-500 truncate">
+          <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate">
             {sig.signer?.issuer_cn || ""}
           </p>
         </div>
@@ -211,17 +237,17 @@ function SignatureCard({ sig, index }: { sig: any; index: number }) {
         <div className="px-3 pb-3 space-y-2 border-t border-gray-100 dark:border-gray-800">
           <div className="grid grid-cols-2 gap-2 pt-2">
             <div>
-              <p className="text-[9px] text-gray-500 uppercase">Integrity</p>
-              <p className={`text-[11px] font-bold ${sig.intact ? "text-green-600" : "text-red-600"}`}>
+              <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase">Integrity</p>
+              <p className={`text-[11px] font-bold ${sig.intact ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
                 {sig.intact ? "Intact" : "Tampered"}
               </p>
             </div>
             <div>
-              <p className="text-[9px] text-gray-500 uppercase">Trust</p>
+              <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase">Trust</p>
               <p className={`text-[11px] font-bold ${
-                sig.trust_status === "VALID" ? "text-green-600"
-                  : sig.trust_status === "UNTRUSTED" ? "text-amber-600"
-                  : "text-red-600"
+                sig.trust_status === "VALID" ? "text-green-600 dark:text-green-400"
+                  : sig.trust_status === "UNTRUSTED" ? "text-amber-600 dark:text-amber-400"
+                  : "text-red-600 dark:text-red-400"
               }`}>
                 {sig.trust_status || "N/A"}
               </p>
@@ -229,15 +255,21 @@ function SignatureCard({ sig, index }: { sig: any; index: number }) {
           </div>
           {sig.timestamps?.signing_time && sig.timestamps.signing_time !== "Unknown" && (
             <div>
-              <p className="text-[9px] text-gray-500 uppercase">Signed</p>
-              <span className="text-[10px] text-gray-600 dark:text-gray-400 font-medium">{sig.timestamps.signing_time}</span>
+              <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase">Signed</p>
+              <span className="text-[10px] text-gray-700 dark:text-gray-300 font-medium">{sig.timestamps.signing_time}</span>
             </div>
           )}
           {sig.details?.reason && (
-            <div><p className="text-[9px] text-gray-500 uppercase">Reason</p><p className="text-[11px] text-gray-700 dark:text-gray-300">{sig.details.reason}</p></div>
+            <div>
+              <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase">Reason</p>
+              <p className="text-[11px] text-gray-700 dark:text-gray-300">{sig.details.reason}</p>
+            </div>
           )}
           {sig.details?.location && (
-            <div><p className="text-[9px] text-gray-500 uppercase">Location</p><p className="text-[11px] text-gray-700 dark:text-gray-300">{sig.details.location}</p></div>
+            <div>
+              <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase">Location</p>
+              <p className="text-[11px] text-gray-700 dark:text-gray-300">{sig.details.location}</p>
+            </div>
           )}
         </div>
       )}
@@ -264,13 +296,13 @@ function TrustStoreSection() {
       <button onClick={() => setShowAdd(!showAdd)} className="w-full flex items-center gap-2 p-3 text-left">
         <span>🛡️</span>
         <span className="text-xs font-bold text-gray-900 dark:text-white flex-1">Trust Store</span>
-        <span className="text-[10px] text-gray-500">{trustStore.length} cert(s)</span>
+        <span className="text-[10px] text-gray-500 dark:text-gray-400">{trustStore.length} cert(s)</span>
         <span className="text-gray-400 text-xs">{showAdd ? "▲" : "▼"}</span>
       </button>
       {showAdd && (
         <div className="px-3 pb-3 border-t border-gray-100 dark:border-gray-800">
           {trustStore.length === 0 ? (
-            <p className="text-[11px] text-gray-500 text-center py-3">No trusted certificates.</p>
+            <p className="text-[11px] text-gray-500 dark:text-gray-400 text-center py-3">No trusted certificates.</p>
           ) : (
             <div className="space-y-1.5 max-h-32 overflow-y-auto pt-2">
               {trustStore.map((cert) => (
@@ -278,7 +310,7 @@ function TrustStoreSection() {
                   <span className="text-xs">🛡️</span>
                   <div className="flex-1 min-w-0">
                     <p className="text-[11px] font-medium text-gray-900 dark:text-white truncate">{cert.name}</p>
-                    <p className="text-[9px] text-gray-500">{cert.issuer_cn}</p>
+                    <p className="text-[9px] text-gray-500 dark:text-gray-400">{cert.issuer_cn}</p>
                   </div>
                   <button onClick={() => handleRemoveTrust(cert.id)} className="text-red-500 hover:text-red-700 text-[10px] font-medium">Remove</button>
                 </div>
@@ -299,54 +331,86 @@ function TrustStoreSection() {
 function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos }: { result: VerificationResult; file: File | null; hasUntrusted: boolean | undefined; stampPos: {x:number;y:number;w:number;h:number}|null; setStampPos: (p:{x:number;y:number;w:number;h:number})=>void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const [rendered, setRendered] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [resizing, setResizing] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [canvasScale, setCanvasScale] = useState(1);
   const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [displayZoom, setDisplayZoom] = useState(1); // CSS transform zoom (instant)
   const pageDim = result.page_dimensions;
+  const pdfDocRef = useRef<any>(null);
+  const pdfPageRef = useRef<any>(null);
+  const renderTimerRef = useRef<any>(null);
 
-  // Render PDF with pdfjs-dist
+  // Load PDF document (cached)
   useEffect(() => {
-    if (!file || !canvasRef.current || !containerRef.current) return;
+    if (!file) return;
     let cancelled = false;
-
-    const renderPdf = async () => {
+    const load = async () => {
       const pdfjsLib = await import("pdfjs-dist");
       pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.js";
-
       const arrayBuffer = await file.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-      const page = await pdf.getPage(1);
-
-      const canvas = canvasRef.current!;
-      const ctx = canvas.getContext("2d")!;
-      const container = containerRef.current!;
-
-      // Fit to container
-      const containerW = container.clientWidth;
-      const containerH = container.clientHeight;
-      const viewport = page.getViewport({ scale: 1 });
-      const scaleX = containerW / viewport.width;
-      const scaleY = containerH / viewport.height;
-      const fitScale = Math.min(scaleX, scaleY);
-
-      const scaledViewport = page.getViewport({ scale: fitScale });
-      canvas.width = scaledViewport.width;
-      canvas.height = scaledViewport.height;
-
       if (!cancelled) {
-        await page.render({ canvasContext: ctx, viewport: scaledViewport }).promise;
-        setCanvasScale(fitScale);
-        setCanvasOffset({ x: (containerW - scaledViewport.width) / 2, y: (containerH - scaledViewport.height) / 2 });
-        setRendered(true);
+        pdfDocRef.current = pdf;
+        pdfPageRef.current = await pdf.getPage(1);
       }
     };
-
-    renderPdf().catch(console.error);
+    load();
     return () => { cancelled = true; };
   }, [file]);
+
+  // Render PDF at base scale (fit-to-page), CSS transform handles zoom
+  const renderPage = useCallback(async () => {
+    if (!canvasRef.current || !containerRef.current || !pdfPageRef.current) return;
+    const page = pdfPageRef.current;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d")!;
+    const container = containerRef.current;
+
+    const containerW = container.clientWidth;
+    const containerH = container.clientHeight;
+    const viewport1 = page.getViewport({ scale: 1 });
+    const fitScale = Math.min(containerW / viewport1.width, containerH / viewport1.height);
+
+    // Render at fitScale only — CSS transform handles zoom
+    const scaledViewport = page.getViewport({ scale: fitScale });
+    canvas.width = scaledViewport.width;
+    canvas.height = scaledViewport.height;
+
+    await page.render({ canvasContext: ctx, viewport: scaledViewport }).promise;
+    setCanvasScale(fitScale);
+    setCanvasOffset({ x: (containerW - scaledViewport.width) / 2, y: (containerH - scaledViewport.height) / 2 });
+    setRendered(true);
+  }, [file]);
+
+  // Initial render
+  useEffect(() => {
+    renderPage();
+  }, [renderPage]);
+
+  // Sync displayZoom when zoom changes (CSS transform — instant, no re-render)
+  useEffect(() => {
+    setDisplayZoom(zoom);
+  }, [zoom]);
+
+  // Scroll wheel zoom — smooth CSS transform only
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      setZoom(prev => {
+        const delta = e.deltaY > 0 ? -0.1 : 0.1;
+        return Math.max(0.3, Math.min(5, +(prev + delta).toFixed(2)));
+      });
+    };
+    container.addEventListener("wheel", handleWheel, { passive: false });
+    return () => container.removeEventListener("wheel", handleWheel);
+  }, []);
 
   // After verification, paint over the old "Signature Not Verified" widget on canvas
   useEffect(() => {
@@ -355,33 +419,27 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Find widget annotation position from signature details
     const sig = result.signatures?.[0];
     const pos = sig?.details?.position;
     if (!pos) return;
 
-    // Widget rect in PDF coords: [x1, y1] is bottom-left, [x2, y2] is top-right
     const wx = pos.x1;
-    const wy = pos.y1; // bottom of widget in PDF coords
+    const wy = pos.y1;
     const ww = pos.x2 - pos.x1;
     const wh = pos.y2 - pos.y1;
 
-    // Convert to canvas coords (PDF y is bottom-up, canvas y is top-down)
     const cx = wx * canvasScale;
-    const cy = (pageDim.height - pos.y2) * canvasScale; // top of widget in canvas coords
+    const cy = (pageDim.height - pos.y2) * canvasScale;
     const cw = ww * canvasScale;
     const ch = wh * canvasScale;
 
-    // Paint white rectangle over the old "Signature Not Verified" widget
     ctx.fillStyle = "white";
     ctx.fillRect(cx - 2, cy - 2, cw + 4, ch + 4);
 
-    // Draw verified stamp text on top
     const signerName = sig?.signer?.common_name || "Unknown";
     const fontSize = Math.max(8, Math.min(11, cw / 18));
     const smallFont = Math.max(6, fontSize - 2);
 
-    // Green checkmark
     ctx.strokeStyle = "#16a34a";
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -390,7 +448,6 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
     ctx.lineTo(cx + cw - 4, cy + ch * 0.25);
     ctx.stroke();
 
-    // Text
     ctx.fillStyle = "#111";
     ctx.font = `bold ${fontSize}px sans-serif`;
     ctx.fillText("Signature valid", cx + 4, cy + fontSize + 2);
@@ -400,7 +457,7 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
 
   }, [rendered, result, pageDim, canvasScale]);
 
-  // Initialize stamp position — place BELOW the signature widget, in clear space
+  // Initialize stamp position
   useEffect(() => {
     if (!stampPos && result.signatures.length > 0 && pageDim) {
       const sig = result.signatures[0];
@@ -408,49 +465,35 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
       if (pos) {
         const stampW = 210;
         const stampH = 80;
-        // The stamp content occupies the TOP of the stamp box (y=13..66 within it)
-        // Place the box so content sits BETWEEN the widget bottom and nearby text
-        // Widget bottom is pos.y1. Text above starts ~pos.y1+65 (varies per PDF).
-        // Place box bottom (sy) so that sy + 66 (content top) > widget bottom,
-        // and sy + 66 < nearby text. Also sy >= 80 so it's visible in canvas.
         const sy = Math.max(80, pos.y1 - 15);
-        // Center horizontally relative to widget, clamped to page bounds
         const sx = Math.max(5, Math.min(
           (pos.x1 + pos.x2) / 2 - stampW / 2,
           pageDim.width - stampW - 5
         ));
         setStampPos({ x: sx, y: sy, w: stampW, h: stampH });
       } else {
-        // No position data — place at bottom-right
         setStampPos({ x: pageDim.width - 230, y: 80, w: 210, h: 80 });
       }
     }
   }, [result, pageDim]);
 
-  // PDF coords → screen coords (on canvas)
+  // Effective scale = canvas scale × CSS zoom
+  const effectiveScale = canvasScale * displayZoom;
+
+  // PDF coords → screen coords (top-left of stamp)
   const pdfToScreen = (px: number, py: number) => {
     if (!pageDim) return { sx: 0, sy: 0 };
     return {
-      sx: canvasOffset.x + px * canvasScale,
-      sy: canvasOffset.y + (pageDim.height - py) * canvasScale,
+      sx: canvasOffset.x + px * effectiveScale,
+      sy: canvasOffset.y + (pageDim.height - py) * effectiveScale,
     };
   };
 
-  // Screen coords → PDF coords (returns bottom-left)
-  const screenToPdf = (sx: number, sy: number) => {
-    if (!pageDim) return { px: 0, py: 0 };
-    return {
-      px: (sx - canvasOffset.x) / canvasScale,
-      py: pageDim.height - (sy - canvasOffset.y) / canvasScale,
-    };
-  };
-
-  // Screen coords → PDF coords (returns top-left, for drag operations)
   const screenToPdfTop = (sx: number, sy: number) => {
     if (!pageDim) return { px: 0, pdfTopY: 0 };
     return {
-      px: (sx - canvasOffset.x) / canvasScale,
-      pdfTopY: pageDim.height - (sy - canvasOffset.y) / canvasScale,
+      px: (sx - canvasOffset.x) / effectiveScale,
+      pdfTopY: pageDim.height - (sy - canvasOffset.y) / effectiveScale,
     };
   };
 
@@ -463,12 +506,11 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
     if (stampPos && pageDim) {
-      // Offset from the TOP-LEFT of the stamp div
-      const topSy = canvasOffset.y + (pageDim.height - stampPos.y - stampPos.h) * canvasScale;
-      const leftSx = canvasOffset.x + stampPos.x * canvasScale;
+      const topSy = canvasOffset.y + (pageDim.height - stampPos.y - stampPos.h) * effectiveScale;
+      const leftSx = canvasOffset.x + stampPos.x * effectiveScale;
       setDragOffset({ x: mouseX - leftSx, y: mouseY - topSy });
     }
-  }, [stampPos, canvasScale, canvasOffset, pageDim]);
+  }, [stampPos, effectiveScale, canvasOffset, pageDim]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if ((!dragging && !resizing) || !stampPos || !pageDim) return;
@@ -477,19 +519,18 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
     const mouseY = e.clientY - rect.top;
 
     if (dragging) {
-      // mouseX/Y - dragOffset gives the TOP-LEFT of the stamp in screen coords
-      // Convert to PDF coords: pdfTopY is the TOP of the stamp, but stampPos.y stores the BOTTOM
       const { px, pdfTopY } = screenToPdfTop(mouseX - dragOffset.x, mouseY - dragOffset.y);
       const pdfBottomY = pdfTopY - stampPos.h;
       setStampPos({ ...stampPos, x: Math.max(0, Math.min(px, pageDim.width - stampPos.w)), y: Math.max(0, Math.min(pdfBottomY, pageDim.height - stampPos.h)) });
     }
     if (resizing) {
-      const { px, py } = screenToPdf(mouseX, mouseY);
+      const { px, pdfTopY } = screenToPdfTop(mouseX, mouseY);
+      const pdfBottomY = pdfTopY;
       const newW = Math.max(120, Math.min(px - stampPos.x, pageDim.width - stampPos.x));
-      const newH = Math.max(50, Math.min(py - stampPos.y, pageDim.height - stampPos.y));
+      const newH = Math.max(50, Math.min(pdfBottomY - stampPos.y, pageDim.height - stampPos.y));
       setStampPos({ ...stampPos, w: newW, h: newH });
     }
-  }, [dragging, resizing, dragOffset, stampPos, canvasScale, canvasOffset, pageDim]);
+  }, [dragging, resizing, dragOffset, stampPos, effectiveScale, canvasOffset, pageDim]);
 
   const handleMouseUp = useCallback(() => {
     setDragging(false);
@@ -507,13 +548,13 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
     }
   }, [dragging, resizing, handleMouseMove, handleMouseUp]);
 
-  // Screen position of stamp — use TOP-LEFT corner (stampPos.y + stampH is the top in PDF coords)
+  // Screen position of stamp (top-left) — account for CSS transform zoom
   const screenStamp = stampPos && pageDim && rendered
     ? {
-        sx: canvasOffset.x + stampPos.x * canvasScale,
-        sy: canvasOffset.y + (pageDim.height - stampPos.y - stampPos.h) * canvasScale,
-        w: stampPos.w * canvasScale,
-        h: stampPos.h * canvasScale,
+        sx: canvasOffset.x + stampPos.x * effectiveScale,
+        sy: canvasOffset.y + (pageDim.height - stampPos.y - stampPos.h) * effectiveScale,
+        w: stampPos.w * effectiveScale,
+        h: stampPos.h * effectiveScale,
       }
     : null;
 
@@ -524,12 +565,23 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
     >
-      {/* PDF rendered on canvas */}
-      <canvas
-        ref={canvasRef}
+      {/* Canvas wrapper — CSS transform handles zoom smoothly */}
+      <div
+        ref={wrapperRef}
         className="absolute"
-        style={{ left: canvasOffset.x, top: canvasOffset.y }}
-      />
+        style={{
+          left: canvasOffset.x,
+          top: canvasOffset.y,
+          transform: `scale(${displayZoom})`,
+          transformOrigin: 'top left',
+          transition: 'transform 0.1s ease-out',
+        }}
+      >
+        <canvas
+          ref={canvasRef}
+          style={{ display: 'block' }}
+        />
+      </div>
 
       {/* Draggable stamp overlay */}
       {screenStamp && (
@@ -580,6 +632,35 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
         </div>
       )}
 
+      {/* Zoom controls */}
+      <div className="absolute top-4 left-4 z-40 flex items-center gap-1 bg-white/90 dark:bg-gray-800/90 rounded-lg shadow-lg px-2 py-1">
+        <button
+          onClick={() => setZoom(z => Math.max(0.3, z - 0.2))}
+          className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm font-bold"
+          title="Zoom out"
+        >
+          −
+        </button>
+        <span className="text-[11px] font-medium text-gray-700 dark:text-gray-300 w-12 text-center">
+          {Math.round(zoom * 100)}%
+        </span>
+        <button
+          onClick={() => setZoom(z => Math.min(5, z + 0.2))}
+          className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm font-bold"
+          title="Zoom in"
+        >
+          +
+        </button>
+        <div className="w-px h-4 bg-gray-300 dark:bg-gray-600 mx-1" />
+        <button
+          onClick={() => setZoom(1)}
+          className="text-[10px] text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 font-medium"
+          title="Fit to page"
+        >
+          Fit
+        </button>
+      </div>
+
       {/* Status badge */}
       <div className="absolute top-4 right-4 z-40">
         <div className={`flex flex-col items-center gap-1 px-3 py-2 rounded-xl shadow-xl ${
@@ -605,28 +686,35 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
 
 
 /* ═══════════════════════════════════════════════════════════════════
-   Export Button — sends stamp position to backend
+   Export Button — auto-downloads, re-exports on each click
    ═══════════════════════════════════════════════════════════════════ */
 
 function ExportButton({ file, result, hasUntrusted, stampPos }: { file: File | null; result: VerificationResult | null; hasUntrusted: boolean | undefined; stampPos: {x:number;y:number;w:number;h:number}|null }) {
   const [exporting, setExporting] = useState(false);
-  const [exportResult, setExportResult] = useState<any>(null);
 
   const handleExport = async () => {
     if (!file) return;
     setExporting(true);
-    setExportResult(null); // Clear previous result so we re-export
     try {
       const form = new FormData();
       form.append("file", file);
-      // Send CURRENT stamp position to backend — always fresh
       let url = `${API_BASE}/api/verify/stamp`;
       if (stampPos) {
         url += `?stamp_x=${stampPos.x}&stamp_y=${stampPos.y}&stamp_w=${stampPos.w}&stamp_h=${stampPos.h}`;
       }
       const res = await fetch(url, { method: "POST", body: form });
       if (!res.ok) { const err = await res.json(); throw new Error(err.detail || "Export failed"); }
-      setExportResult(await res.json());
+      const data = await res.json();
+
+      // Auto-download
+      const dlRes = await fetch(`${API_BASE}${data.download_url}`);
+      const blob = await dlRes.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = data.stamped_filename || "verified.pdf";
+      a.click();
+      URL.revokeObjectURL(blobUrl);
     } catch (err: any) {
       alert(`Export failed: ${err.message}`);
     } finally {
@@ -634,28 +722,9 @@ function ExportButton({ file, result, hasUntrusted, stampPos }: { file: File | n
     }
   };
 
-  const handleDownload = async () => {
-    if (!exportResult) return;
-    const res = await fetch(`${API_BASE}${exportResult.download_url}`);
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = exportResult.stamped_filename || "verified.pdf";
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
   return (
-    <div className="flex gap-2 flex-1">
-      <button onClick={handleExport} disabled={exporting || !file} className="btn btn-primary flex-1 text-xs">
-        {exporting ? "⏳ Exporting..." : exportResult ? "🔄 Re-Export" : "📄 Export"}
-      </button>
-      {exportResult && (
-        <button onClick={handleDownload} className="btn btn-outline flex-1 text-xs">
-          ⬇️ Download
-        </button>
-      )}
-    </div>
+    <button onClick={handleExport} disabled={exporting || !file} className="btn btn-primary flex-1 text-xs">
+      {exporting ? "⏳ Exporting..." : "📄 Export Verified PDF"}
+    </button>
   );
 }
