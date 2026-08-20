@@ -169,7 +169,7 @@ export default function SignPage() {
               <p className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-1">
                 {isDragging ? "Drop your PDF here" : "Drop a PDF here or click to upload"}
               </p>
-              <p className="text-sm text-gray-400 dark:text-gray-500">
+              <p className="text-sm text-gray-500 dark:text-gray-400">
                 PDF files up to 50MB
               </p>
               <input type="file" accept=".pdf" className="hidden" onChange={handleFileChange} />

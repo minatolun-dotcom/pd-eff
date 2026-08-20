@@ -91,7 +91,7 @@ export default function VerifyPage() {
               <p className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-1">
                 {isDragging ? "Drop your PDF here" : "Drop a signed PDF here or click to upload"}
               </p>
-              <p className="text-sm text-gray-400 dark:text-gray-500">
+              <p className="text-sm text-gray-500 dark:text-gray-400">
                 PDF files up to 50MB
               </p>
               <input
@@ -607,14 +607,14 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
           }}
           onMouseDown={handleMouseDown}
         >
-          <div className="w-full h-full bg-white border border-gray-200 shadow-lg p-2 flex flex-col justify-between">
-            <div>
-              <p className="text-[11px] font-bold text-gray-900 leading-tight">Signature valid</p>
-              <p className="text-[9px] text-gray-600 leading-tight mt-0.5">
+          <div className="w-full h-full bg-white border-l-[3px] border-l-green-500 border-t border-r border-b border-gray-200 shadow-md p-2.5 flex flex-col justify-center relative">
+            <div className="pr-8">
+              <p className="text-[12px] font-bold text-gray-900 leading-tight mb-0.5">Signature valid</p>
+              <p className="text-[9px] text-gray-700 leading-tight">
                 Digitally signed by {result.signatures[0]?.signer?.common_name || "Unknown"}
               </p>
               {result.signatures[0]?.timestamps?.signing_time && (
-                <p className="text-[8px] text-gray-500 leading-tight">
+                <p className="text-[8px] text-gray-500 leading-tight mt-0.5">
                   Date: {result.signatures[0].timestamps.signing_time}
                 </p>
               )}
@@ -630,8 +630,8 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
               )}
             </div>
             <div className="absolute right-2 top-1/2 -translate-y-1/2">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M4 12.5l5 5L20 6" />
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M5 12.5l4.5 4.5L19 7" />
               </svg>
             </div>
           </div>

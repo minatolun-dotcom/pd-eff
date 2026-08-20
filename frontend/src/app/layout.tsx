@@ -6,6 +6,7 @@ import ThemeToggle from "@/components/ThemeToggle";
 export const metadata: Metadata = {
   title: "pd-eff — PDF Digital Signing",
   description: "Secure digital PDF signing and signature verification",
+  icons: { icon: '/favicon.svg' },
 };
 
 export default function RootLayout({
@@ -52,7 +53,7 @@ export default function RootLayout({
               <div className="py-3 px-2 border-t border-gray-200/60 dark:border-gray-800/60 space-y-1">
                 <ThemeToggle />
                 <div className="hidden lg:flex items-center justify-center py-2">
-                  <span className="text-[10px] text-gray-400 dark:text-gray-600 font-medium">v1.4.4</span>
+                  <span className="text-[10px] text-gray-400 dark:text-gray-600 font-medium">v1.5.0</span>
                 </div>
               </div>
             </aside>
