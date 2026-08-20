@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import PdfSigner from "@/components/PdfSigner";
 import UsbKeyDetector from "@/components/UsbKeyDetector";
+import { saveSessionPin, loadSessionPin, clearSessionPin } from "@/components/UsbKeyDetector";
 import { listCertificates, Certificate } from "@/lib/api";
 
 interface Pkcs11Token {
@@ -311,6 +312,15 @@ export default function SignPage() {
                     onTokenDetected={(token, path) => {
                       setSelectedToken(token);
                       setModulePath(path);
+                      // Load cached PIN for this session
+                      const cached = loadSessionPin();
+                      if (cached) setPin(cached);
+                    }}
+                    onClearSelection={() => {
+                      setSelectedToken(null);
+                      setModulePath("");
+                      setPin("");
+                      clearSessionPin();
                     }}
                     selectedToken={selectedToken}
                   />
@@ -320,10 +330,14 @@ export default function SignPage() {
                       <input
                         type="password"
                         value={pin}
-                        onChange={(e) => setPin(e.target.value)}
+                        onChange={(e) => {
+                          setPin(e.target.value);
+                          saveSessionPin(e.target.value);
+                        }}
                         placeholder="Enter your PIN"
                         className="input text-sm"
                       />
+                      <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1">PIN cached for this browser session</p>
                     </div>
                   )}
                 </div>
