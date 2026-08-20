@@ -1105,7 +1105,24 @@ async def sign_pdf_advanced(
 
 @app.get("/api/pkcs11/tokens")
 def list_pkcs11_tokens(module_path: str):
-    """List available PKCS#11 tokens/slots."""
+    """List available PKCS#11 tokens/slots.
+    
+    Pass module_path='test' for a simulated test token (no hardware required).
+    """
+    # ── Test/mock mode: return a simulated token ────────────────────
+    if module_path.lower() in ("test", "mock", "simulated"):
+        return {"tokens": [{
+            "slot_id": 0,
+            "label": "Test Token (Simulated)",
+            "serial_number": "TEST-0000-0000-DEMO",
+            "model": "SoftHSM2 v2",
+            "manufacturer": "SoftHSM Project",
+            "has_keypad": False,
+            "keys": [
+                {"label": "signing-key", "type": "RSA", "id": "01", "can_sign": True},
+            ],
+        }]}
+
     try:
         from .pkcs11_service import list_pkcs11_tokens
         tokens = list_pkcs11_tokens(module_path)
@@ -1146,24 +1163,42 @@ async def sign_pdf_with_pkcs11(
     with open(pdf_path, "wb") as f:
         f.write(content)
 
-    # Sign with PKCS#11
-    try:
-        from .pkcs11_service import sign_pdf_with_pkcs11
-        result = sign_pdf_with_pkcs11(
-            pdf_path=str(pdf_path),
-            module_path=module_path,
-            token_label=token_label,
-            pin=pin,
-            key_label=key_label or None,
-            signer_name=signer_name or "Hardware Token",
-            visible=visible,
+    # ── Test/mock mode: sign with generated self-signed cert ──────
+    if module_path.lower() in ("test", "mock", "simulated"):
+        from .cert_utils import generate_self_signed_cert
+        test_cert = generate_self_signed_cert(
+            common_name=signer_name or "Test Signer (Simulated)",
+            organization="pd-eff Test",
         )
-    except FileNotFoundError as e:
-        raise HTTPException(404, str(e))
-    except ImportError:
-        raise HTTPException(500, "python-pkcs11 is required. Install with: pip install python-pkcs11")
-    except Exception as e:
-        raise HTTPException(500, f"Signing failed: {str(e)}")
+        try:
+            result = sign_pdf(
+                pdf_path=str(pdf_path),
+                pfx_path=test_cert["pfx_path"],
+                passphrase=test_cert["pfx_passphrase"],
+                signer_name=signer_name or "Test Signer (Simulated)",
+                visible=visible,
+            )
+        except Exception as e:
+            raise HTTPException(500, f"Test signing failed: {str(e)}")
+    else:
+        # Sign with real PKCS#11 hardware token
+        try:
+            from .pkcs11_service import sign_pdf_with_pkcs11
+            result = sign_pdf_with_pkcs11(
+                pdf_path=str(pdf_path),
+                module_path=module_path,
+                token_label=token_label,
+                pin=pin,
+                key_label=key_label or None,
+                signer_name=signer_name or "Hardware Token",
+                visible=visible,
+            )
+        except FileNotFoundError as e:
+            raise HTTPException(404, str(e))
+        except ImportError:
+            raise HTTPException(500, "python-pkcs11 is required. Install with: pip install python-pkcs11")
+        except Exception as e:
+            raise HTTPException(500, f"Signing failed: {str(e)}")
 
     # Record signing operation
     record = SigningRecord(
