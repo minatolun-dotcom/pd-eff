@@ -536,10 +536,11 @@ function ExportButton({ file, result, hasUntrusted, stampPos }: { file: File | n
   const handleExport = async () => {
     if (!file) return;
     setExporting(true);
+    setExportResult(null); // Clear previous result so we re-export
     try {
       const form = new FormData();
       form.append("file", file);
-      // Send stamp position to backend
+      // Send CURRENT stamp position to backend — always fresh
       let url = `${API_BASE}/api/verify/stamp`;
       if (stampPos) {
         url += `?stamp_x=${stampPos.x}&stamp_y=${stampPos.y}&stamp_w=${stampPos.w}&stamp_h=${stampPos.h}`;
@@ -554,26 +555,28 @@ function ExportButton({ file, result, hasUntrusted, stampPos }: { file: File | n
     }
   };
 
-  if (exportResult) {
-    return (
-      <button onClick={async () => {
-        const res = await fetch(`${API_BASE}${exportResult.download_url}`);
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = exportResult.stamped_filename || "verified.pdf";
-        a.click();
-        URL.revokeObjectURL(url);
-      }} className="btn btn-primary flex-1 text-xs">
-        ⬇️ Download Verified
-      </button>
-    );
-  }
+  const handleDownload = async () => {
+    if (!exportResult) return;
+    const res = await fetch(`${API_BASE}${exportResult.download_url}`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = exportResult.stamped_filename || "verified.pdf";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
-    <button onClick={handleExport} disabled={exporting || !file} className="btn btn-primary flex-1 text-xs">
-      {exporting ? "⏳..." : "📄 Export"}
-    </button>
+    <div className="flex gap-2 flex-1">
+      <button onClick={handleExport} disabled={exporting || !file} className="btn btn-primary flex-1 text-xs">
+        {exporting ? "⏳ Exporting..." : exportResult ? "🔄 Re-Export" : "📄 Export"}
+      </button>
+      {exportResult && (
+        <button onClick={handleDownload} className="btn btn-outline flex-1 text-xs">
+          ⬇️ Download
+        </button>
+      )}
+    </div>
   );
 }
