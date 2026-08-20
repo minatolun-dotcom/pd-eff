@@ -44,11 +44,7 @@ export default function VerifyPage() {
     }
   }, [file]);
 
-  const reset = () => {
-    setFile(null);
-    setResult(null);
-    setError(null);
-  };
+  const reset = () => { setFile(null); setResult(null); setError(null); };
 
   const hasUntrusted = result ? result.signatures?.some(
     (s) => s.intact && s.trust_status !== "VALID"
@@ -339,8 +335,13 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
   const [canvasScale, setCanvasScale] = useState(1);
   const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
-  // wrapperOffset is now computed from zoom (center-based), not from cursor position
+  const [wrapperOffset, setWrapperOffset] = useState({ x: 0, y: 0 });
   const [pdfLoaded, setPdfLoaded] = useState(false);
+
+  // Reset zoom when file changes
+  useEffect(() => {
+    if (!file) { setZoom(1); setWrapperOffset({ x: 0, y: 0 }); }
+  }, [file]);
   const pageDim = result.page_dimensions;
   const pdfDocRef = useRef<any>(null);
   const pdfPageRef = useRef<any>(null);
@@ -411,9 +412,19 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
     if (!container) return;
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
-      setZoom(prev => {
+      const rect = container.getBoundingClientRect();
+      const cursorX = e.clientX - rect.left;
+      const cursorY = e.clientY - rect.top;
+      setZoom(prevZoom => {
         const delta = e.deltaY > 0 ? -0.1 : 0.1;
-        return Math.max(1, Math.min(5, +(prev + delta).toFixed(2)));
+        const newZoom = Math.max(1, Math.min(5, +(prevZoom + delta).toFixed(2)));
+        if (newZoom === prevZoom) return prevZoom;
+        const ratio = newZoom / prevZoom;
+        setWrapperOffset(prev => ({
+          x: cursorX - (cursorX - prev.x) * ratio,
+          y: cursorY - (cursorY - prev.y) * ratio,
+        }));
+        return newZoom;
       });
     };
     container.addEventListener("wheel", handleWheel, { passive: false });
@@ -478,22 +489,13 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
     };
   };
 
-  // Center-based wrapper offset: keeps PDF centered at any zoom level
-  const centerWrapperOffset = (() => {
-    if (!containerRef.current) return { x: 0, y: 0 };
-    const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
-    return {
-      x: canvas.width * (1 - zoom) / 2,
-      y: canvas.height * (1 - zoom) / 2,
-    };
-  })();
+
 
   const screenToPdfTop = (sx: number, sy: number) => {
     if (!pageDim) return { px: 0, pdfTopY: 0 };
     return {
-      px: (sx - canvasOffset.x - centerWrapperOffset.x) / effectiveScale,
-      pdfTopY: pageDim.height - (sy - canvasOffset.y - centerWrapperOffset.y) / effectiveScale,
+      px: (sx - canvasOffset.x - wrapperOffset.x) / effectiveScale,
+      pdfTopY: pageDim.height - (sy - canvasOffset.y - wrapperOffset.y) / effectiveScale,
     };
   };
 
@@ -506,11 +508,11 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
     if (stampPos && pageDim) {
-      const topSy = canvasOffset.y + centerWrapperOffset.y + (pageDim.height - stampPos.y - stampPos.h) * effectiveScale;
-      const leftSx = canvasOffset.x + centerWrapperOffset.x + stampPos.x * effectiveScale;
+      const topSy = canvasOffset.y + wrapperOffset.y + (pageDim.height - stampPos.y - stampPos.h) * effectiveScale;
+      const leftSx = canvasOffset.x + wrapperOffset.x + stampPos.x * effectiveScale;
       setDragOffset({ x: mouseX - leftSx, y: mouseY - topSy });
     }
-  }, [stampPos, effectiveScale, canvasOffset, centerWrapperOffset, pageDim]);
+  }, [stampPos, effectiveScale, canvasOffset, wrapperOffset, pageDim]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if ((!dragging && !resizing) || !stampPos || !pageDim) return;
@@ -530,7 +532,7 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
       const newH = Math.max(50, Math.min(pdfBottomY - stampPos.y, pageDim.height - stampPos.y));
       setStampPos({ ...stampPos, w: newW, h: newH });
     }
-  }, [dragging, resizing, dragOffset, stampPos, effectiveScale, canvasOffset, centerWrapperOffset, pageDim]);
+  }, [dragging, resizing, dragOffset, stampPos, effectiveScale, canvasOffset, wrapperOffset, pageDim]);
 
   const handleMouseUp = useCallback(() => {
     setDragging(false);
@@ -551,8 +553,8 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
   // Screen position of stamp (top-left) — account for CSS transform zoom
   const screenStamp = stampPos && pageDim && rendered
     ? {
-        sx: canvasOffset.x + centerWrapperOffset.x + stampPos.x * effectiveScale,
-        sy: canvasOffset.y + centerWrapperOffset.y + (pageDim.height - stampPos.y - stampPos.h) * effectiveScale,
+        sx: canvasOffset.x + wrapperOffset.x + stampPos.x * effectiveScale,
+        sy: canvasOffset.y + wrapperOffset.y + (pageDim.height - stampPos.y - stampPos.h) * effectiveScale,
         w: stampPos.w * effectiveScale,
         h: stampPos.h * effectiveScale,
       }
@@ -570,8 +572,8 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
         ref={wrapperRef}
         className="absolute"
         style={{
-          left: canvasOffset.x + centerWrapperOffset.x,
-          top: canvasOffset.y + centerWrapperOffset.y,
+          left: canvasOffset.x + wrapperOffset.x,
+          top: canvasOffset.y + wrapperOffset.y,
           transform: `scale(${zoom})`,
           transformOrigin: 'top left',
         }}
@@ -634,7 +636,20 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
       {/* Zoom controls */}
       <div className="absolute top-4 left-4 z-40 flex items-center gap-1 bg-white/90 dark:bg-gray-800/90 rounded-lg shadow-lg px-2 py-1">
         <button
-          onClick={() => setZoom(z => Math.max(1, z - 0.2))}
+          onClick={() => {
+            const container = containerRef.current;
+            const cx = container ? container.clientWidth / 2 : 0;
+            const cy = container ? container.clientHeight / 2 : 0;
+            setZoom(prevZoom => {
+              const newZoom = Math.max(1, prevZoom - 0.2);
+              const ratio = newZoom / prevZoom;
+              setWrapperOffset(prev => ({
+                x: cx - (cx - prev.x) * ratio,
+                y: cy - (cy - prev.y) * ratio,
+              }));
+              return newZoom;
+            });
+          }}
           className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm font-bold"
           title="Zoom out"
         >
@@ -644,7 +659,20 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
           {Math.round(zoom * 100)}%
         </span>
         <button
-          onClick={() => setZoom(z => Math.min(5, z + 0.2))}
+          onClick={() => {
+            const container = containerRef.current;
+            const cx = container ? container.clientWidth / 2 : 0;
+            const cy = container ? container.clientHeight / 2 : 0;
+            setZoom(prevZoom => {
+              const newZoom = Math.min(5, prevZoom + 0.2);
+              const ratio = newZoom / prevZoom;
+              setWrapperOffset(prev => ({
+                x: cx - (cx - prev.x) * ratio,
+                y: cy - (cy - prev.y) * ratio,
+              }));
+              return newZoom;
+            });
+          }}
           className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm font-bold"
           title="Zoom in"
         >
@@ -652,7 +680,7 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
         </button>
         <div className="w-px h-4 bg-gray-300 dark:bg-gray-600 mx-1" />
         <button
-          onClick={() => setZoom(1)}
+          onClick={() => { setWrapperOffset({ x: 0, y: 0 }); setZoom(1); }}
           className="text-[10px] text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 font-medium"
           title="Fit to page"
         >
