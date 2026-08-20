@@ -336,6 +336,8 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
   const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [wrapperOffset, setWrapperOffset] = useState({ x: 0, y: 0 });
+  const canvasOffsetRef = useRef(canvasOffset);
+  canvasOffsetRef.current = canvasOffset;
   const [pdfLoaded, setPdfLoaded] = useState(false);
 
   // Reset zoom when file changes
@@ -412,18 +414,28 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
     if (!container) return;
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
+      const wrapper = wrapperRef.current;
+      const canvas = canvasRef.current;
+      if (!wrapper || !canvas) return;
       const rect = container.getBoundingClientRect();
       const cursorX = e.clientX - rect.left;
       const cursorY = e.clientY - rect.top;
+      // Read actual wrapper position from DOM (always accurate)
+      const wLeft = parseFloat(wrapper.style.left || '0');
+      const wTop = parseFloat(wrapper.style.top || '0');
+      const wScale = parseFloat((wrapper.style.transform || 'scale(1)').match(/scale\(([\d.]+)\)/)?.[1] || '1');
+      // Canvas pixel under cursor (in unscaled canvas coords)
+      const canvasPx = (cursorX - wLeft) / wScale;
+      const canvasPy = (cursorY - wTop) / wScale;
       setZoom(prevZoom => {
         const delta = e.deltaY > 0 ? -0.1 : 0.1;
         const newZoom = Math.max(1, Math.min(5, +(prevZoom + delta).toFixed(2)));
         if (newZoom === prevZoom) return prevZoom;
-        const ratio = newZoom / prevZoom;
-        setWrapperOffset(prev => ({
-          x: cursorX - (cursorX - prev.x) * ratio,
-          y: cursorY - (cursorY - prev.y) * ratio,
-        }));
+        // New wrapper position: cursor stays over same canvas pixel
+        const newLeft = cursorX - canvasPx * newZoom;
+        const newTop = cursorY - canvasPy * newZoom;
+        const co = canvasOffsetRef.current;
+        setWrapperOffset({ x: newLeft - co.x, y: newTop - co.y });
         return newZoom;
       });
     };
@@ -637,16 +649,23 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
       <div className="absolute top-4 left-4 z-40 flex items-center gap-1 bg-white/90 dark:bg-gray-800/90 rounded-lg shadow-lg px-2 py-1">
         <button
           onClick={() => {
+            const wrapper = wrapperRef.current;
+            const canvas = canvasRef.current;
             const container = containerRef.current;
-            const cx = container ? container.clientWidth / 2 : 0;
-            const cy = container ? container.clientHeight / 2 : 0;
+            if (!wrapper || !canvas || !container) return;
+            const cr = container.getBoundingClientRect();
+            const cx = cr.width / 2;
+            const cy = cr.height / 2;
+            const wLeft = parseFloat(wrapper.style.left || '0');
+            const wTop = parseFloat(wrapper.style.top || '0');
+            const wScale = parseFloat((wrapper.style.transform || 'scale(1)').match(/scale\(([\d.]+)\)/)?.[1] || '1');
+            const canvasPx = (cx - wLeft) / wScale;
+            const canvasPy = (cy - wTop) / wScale;
             setZoom(prevZoom => {
               const newZoom = Math.max(1, prevZoom - 0.2);
-              const ratio = newZoom / prevZoom;
-              setWrapperOffset(prev => ({
-                x: cx - (cx - prev.x) * ratio,
-                y: cy - (cy - prev.y) * ratio,
-              }));
+              const newLeft = cx - canvasPx * newZoom;
+              const newTop = cy - canvasPy * newZoom;
+              setWrapperOffset({ x: newLeft - canvasOffsetRef.current.x, y: newTop - canvasOffsetRef.current.y });
               return newZoom;
             });
           }}
@@ -660,16 +679,23 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
         </span>
         <button
           onClick={() => {
+            const wrapper = wrapperRef.current;
+            const canvas = canvasRef.current;
             const container = containerRef.current;
-            const cx = container ? container.clientWidth / 2 : 0;
-            const cy = container ? container.clientHeight / 2 : 0;
+            if (!wrapper || !canvas || !container) return;
+            const cr = container.getBoundingClientRect();
+            const cx = cr.width / 2;
+            const cy = cr.height / 2;
+            const wLeft = parseFloat(wrapper.style.left || '0');
+            const wTop = parseFloat(wrapper.style.top || '0');
+            const wScale = parseFloat((wrapper.style.transform || 'scale(1)').match(/scale\(([\d.]+)\)/)?.[1] || '1');
+            const canvasPx = (cx - wLeft) / wScale;
+            const canvasPy = (cy - wTop) / wScale;
             setZoom(prevZoom => {
               const newZoom = Math.min(5, prevZoom + 0.2);
-              const ratio = newZoom / prevZoom;
-              setWrapperOffset(prev => ({
-                x: cx - (cx - prev.x) * ratio,
-                y: cy - (cy - prev.y) * ratio,
-              }));
+              const newLeft = cx - canvasPx * newZoom;
+              const newTop = cy - canvasPy * newZoom;
+              setWrapperOffset({ x: newLeft - canvasOffsetRef.current.x, y: newTop - canvasOffsetRef.current.y });
               return newZoom;
             });
           }}
