@@ -340,6 +340,7 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
   const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [displayZoom, setDisplayZoom] = useState(1); // CSS transform zoom (instant)
+  const [pdfLoaded, setPdfLoaded] = useState(false);
   const pageDim = result.page_dimensions;
   const pdfDocRef = useRef<any>(null);
   const pdfPageRef = useRef<any>(null);
@@ -348,6 +349,7 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
   // Load PDF document (cached)
   useEffect(() => {
     if (!file) return;
+    setPdfLoaded(false);
     let cancelled = false;
     const load = async () => {
       const pdfjsLib = await import("pdfjs-dist");
@@ -357,6 +359,7 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
       if (!cancelled) {
         pdfDocRef.current = pdf;
         pdfPageRef.current = await pdf.getPage(1);
+        setPdfLoaded(true);
       }
     };
     load();
@@ -385,12 +388,20 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
     setCanvasScale(fitScale);
     setCanvasOffset({ x: (containerW - scaledViewport.width) / 2, y: (containerH - scaledViewport.height) / 2 });
     setRendered(true);
-  }, [file]);
+  }, [pdfLoaded]);
 
-  // Initial render
+  // Render once PDF is loaded
   useEffect(() => {
-    renderPage();
-  }, [renderPage]);
+    if (pdfLoaded) renderPage();
+  }, [pdfLoaded, renderPage]);
+
+  // Re-render on window resize
+  useEffect(() => {
+    if (!pdfLoaded) return;
+    const handleResize = () => renderPage();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [pdfLoaded, renderPage]);
 
   // Sync displayZoom when zoom changes (CSS transform — instant, no re-render)
   useEffect(() => {
