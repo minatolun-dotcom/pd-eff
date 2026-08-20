@@ -346,12 +346,14 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
       const sig = result.signatures[0];
       const pos = sig.details?.position;
       if (pos) {
-        // Place stamp below the widget (y1 is the bottom of widget in PDF coords)
-        // with enough gap to avoid overlapping nearby text
         const stampW = 210;
         const stampH = 80;
-        // Position below the widget with a 15-unit gap
-        const sy = Math.max(5, pos.y1 - stampH - 15);
+        // The stamp content occupies the TOP of the stamp box (y=13..66 within it)
+        // Place the box so content sits BETWEEN the widget bottom and nearby text
+        // Widget bottom is pos.y1. Text above starts ~pos.y1+65 (varies per PDF).
+        // Place box bottom (sy) so that sy + 66 (content top) > widget bottom,
+        // and sy + 66 < nearby text. Also sy >= 80 so it's visible in canvas.
+        const sy = Math.max(80, pos.y1 - 15);
         // Center horizontally relative to widget, clamped to page bounds
         const sx = Math.max(5, Math.min(
           (pos.x1 + pos.x2) / 2 - stampW / 2,
@@ -360,7 +362,7 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
         setStampPos({ x: sx, y: sy, w: stampW, h: stampH });
       } else {
         // No position data — place at bottom-right
-        setStampPos({ x: pageDim.width - 230, y: 15, w: 210, h: 80 });
+        setStampPos({ x: pageDim.width - 230, y: 80, w: 210, h: 80 });
       }
     }
   }, [result, pageDim]);
