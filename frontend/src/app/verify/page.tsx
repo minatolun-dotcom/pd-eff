@@ -23,12 +23,13 @@ export default function VerifyPage() {
     setError(null);
   };
 
-  const handleVerify = async () => {
-    if (!file) return;
+  const handleVerify = async (f?: File | React.MouseEvent) => {
+    const target = (f && 'name' in f) ? f : file;
+    if (!target) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await verifyPdf(file);
+      const res = await verifyPdf(target);
       setResult(res);
     } catch (err: any) {
       setError(err.message || "Verification failed");
@@ -36,6 +37,13 @@ export default function VerifyPage() {
       setLoading(false);
     }
   };
+
+  // Auto-verify when file is selected
+  useEffect(() => {
+    if (file && !result && !loading) {
+      handleVerify(file);
+    }
+  }, [file]);
 
   const reset = () => {
     setFile(null);
@@ -339,6 +347,58 @@ function PdfPreviewWithStamp({ result, file, hasUntrusted, stampPos, setStampPos
     renderPdf().catch(console.error);
     return () => { cancelled = true; };
   }, [file]);
+
+  // After verification, paint over the old "Signature Not Verified" widget on canvas
+  useEffect(() => {
+    if (!rendered || !canvasRef.current || !result || !pageDim) return;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    // Find widget annotation position from signature details
+    const sig = result.signatures?.[0];
+    const pos = sig?.details?.position;
+    if (!pos) return;
+
+    // Widget rect in PDF coords: [x1, y1] is bottom-left, [x2, y2] is top-right
+    const wx = pos.x1;
+    const wy = pos.y1; // bottom of widget in PDF coords
+    const ww = pos.x2 - pos.x1;
+    const wh = pos.y2 - pos.y1;
+
+    // Convert to canvas coords (PDF y is bottom-up, canvas y is top-down)
+    const cx = wx * canvasScale;
+    const cy = (pageDim.height - pos.y2) * canvasScale; // top of widget in canvas coords
+    const cw = ww * canvasScale;
+    const ch = wh * canvasScale;
+
+    // Paint white rectangle over the old "Signature Not Verified" widget
+    ctx.fillStyle = "white";
+    ctx.fillRect(cx - 2, cy - 2, cw + 4, ch + 4);
+
+    // Draw verified stamp text on top
+    const signerName = sig?.signer?.common_name || "Unknown";
+    const fontSize = Math.max(8, Math.min(11, cw / 18));
+    const smallFont = Math.max(6, fontSize - 2);
+
+    // Green checkmark
+    ctx.strokeStyle = "#16a34a";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx + cw - 18, cy + ch * 0.45);
+    ctx.lineTo(cx + cw - 13, cy + ch * 0.7);
+    ctx.lineTo(cx + cw - 4, cy + ch * 0.25);
+    ctx.stroke();
+
+    // Text
+    ctx.fillStyle = "#111";
+    ctx.font = `bold ${fontSize}px sans-serif`;
+    ctx.fillText("Signature valid", cx + 4, cy + fontSize + 2);
+    ctx.font = `${smallFont}px sans-serif`;
+    ctx.fillStyle = "#555";
+    ctx.fillText(signerName.substring(0, 25), cx + 4, cy + fontSize + smallFont + 6);
+
+  }, [rendered, result, pageDim, canvasScale]);
 
   // Initialize stamp position — place BELOW the signature widget, in clear space
   useEffect(() => {
