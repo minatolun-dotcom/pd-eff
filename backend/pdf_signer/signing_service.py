@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from pyhanko.sign import signers, fields
+from pyhanko.sign.fields import SigFieldSpec
 from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
 from pyhanko.pdf_utils.reader import PdfFileReader
 from pyhanko import stamp
@@ -75,10 +76,20 @@ def sign_pdf(
     passphrase_bytes = passphrase.encode("utf-8") if passphrase else b""
 
     # Load PKCS#12 using PyHanko's SimpleSigner
-    signer = SimpleSigner.load_pkcs12(
-        pfx_file=pfx_path,
-        passphrase=passphrase_bytes,
-    )
+    try:
+        signer = SimpleSigner.load_pkcs12(
+            pfx_file=pfx_path,
+            passphrase=passphrase_bytes,
+        )
+    except Exception as e:
+        if "password" in str(e).lower() or "invalid" in str(e).lower():
+            raise ValueError("Invalid certificate passphrase. Please check your passphrase and try again.")
+        raise ValueError(f"Failed to load certificate: {str(e)}")
+
+    # Validate that the signer loaded correctly (SimpleSigner may silently
+    # return a signer with None key material on wrong passphrase)
+    if not signer or not signer.signing_cert or not getattr(signer, 'signing_key', None):
+        raise ValueError("Certificate could not be loaded. The passphrase may be incorrect or the certificate file may be corrupted.")
 
     # Check if PDF already has signatures (for multiple signatures)
     existing_sig_count = _count_signatures(pdf_path)

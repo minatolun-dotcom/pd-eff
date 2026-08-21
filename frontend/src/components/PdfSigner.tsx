@@ -23,6 +23,28 @@ export default function PdfSigner({ file, onSign, signing }: PdfSignerProps) {
   const [totalPages, setTotalPages] = useState(0);
   const [loading, setLoading] = useState(true);
   const [scale, setScale] = useState(1.5);
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  // Auto-scale: fit PDF to container (both width and height)
+  const fitScale = useCallback(() => {
+    if (!containerRef.current || !pdf) return;
+    const cw = containerRef.current.clientWidth - 40;
+    const ch = containerRef.current.clientHeight - 20;
+    pdf.getPage(pageNum).then((page: any) => {
+      const viewport = page.getViewport({ scale: 1 });
+      const fitW = cw / viewport.width;
+      const fitH = ch / viewport.height;
+      const fit = Math.min(fitW, fitH, 2.0);
+      setScale(Math.max(0.5, Math.round(fit * 4) / 4)); // snap to 0.25
+    }).catch(() => {});
+  }, [pdf, pageNum]);
+
+  // Measure container width on mount
+  useEffect(() => {
+    if (containerRef.current) {
+      setContainerWidth(containerRef.current.clientWidth);
+    }
+  }, []);
 
   // Drawing state
   const [isDrawing, setIsDrawing] = useState(false);
@@ -34,14 +56,19 @@ export default function PdfSigner({ file, onSign, signing }: PdfSignerProps) {
   const offscreenRef = useRef<HTMLCanvasElement | null>(null);
   const renderedPageRef = useRef<number>(-1);
 
-  // Load PDF
+  // Load PDF (cached pdfjsLib import)
   useEffect(() => {
     let cancelled = false;
     async function loadPdf() {
       try {
-        const pdfjsLib = await import("pdfjs-dist");
-        pdfjsLib.GlobalWorkerOptions.workerSrc =
-          `//cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`;
+        // Cache the pdfjs-dist module globally
+        if (!(window as any).__pdfjsLib) {
+          const pdfjsLib = await import("pdfjs-dist");
+          pdfjsLib.GlobalWorkerOptions.workerSrc =
+            `//cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`;
+          (window as any).__pdfjsLib = pdfjsLib;
+        }
+        const pdfjsLib = (window as any).__pdfjsLib;
         const arrayBuffer = await file.arrayBuffer();
         const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
         const pdfDoc = await loadingTask.promise;
@@ -58,27 +85,25 @@ export default function PdfSigner({ file, onSign, signing }: PdfSignerProps) {
     return () => { cancelled = true; };
   }, [file]);
 
-  const drawRectangle = useCallback((ctx: CanvasRenderingContext2D, rect: Rectangle) => {
-    // Shadow
-    ctx.shadowColor = "rgba(37, 99, 235, 0.3)";
-    ctx.shadowBlur = 8;
-    ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = 2;
+  // Auto-fit scale when PDF loads
+  useEffect(() => {
+    if (pdf && !loading) fitScale();
+  }, [pdf, loading, fitScale]);
 
+  const drawRectangle = useCallback((ctx: CanvasRenderingContext2D, rect: Rectangle) => {
     // Fill
-    ctx.fillStyle = "rgba(37, 99, 235, 0.08)";
+    ctx.fillStyle = "rgba(37, 99, 235, 0.15)";
     ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
 
-    // Border
+    // Solid border
     ctx.shadowBlur = 0;
     ctx.strokeStyle = "#2563eb";
-    ctx.lineWidth = 2;
-    ctx.setLineDash([6, 4]);
-    ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
+    ctx.lineWidth = 2.5;
     ctx.setLineDash([]);
+    ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
 
     // Corner markers
-    const cornerSize = 8;
+    const cornerSize = 10;
     ctx.strokeStyle = "#2563eb";
     ctx.lineWidth = 3;
     const corners = [
@@ -94,10 +119,16 @@ export default function PdfSigner({ file, onSign, signing }: PdfSignerProps) {
       ctx.fill();
     }
 
-    // Label
-    ctx.fillStyle = "#2563eb";
-    ctx.font = "bold 11px system-ui, sans-serif";
-    ctx.fillText("✍️ Signature", rect.x + 6, rect.y + 16);
+    // Label with background
+    const label = "✍️ Signature";
+    ctx.font = "bold 12px system-ui, sans-serif";
+    const tm = ctx.measureText(label);
+    const lx = rect.x + 4;
+    const ly = rect.y + 18;
+    ctx.fillStyle = "rgba(37, 99, 235, 0.85)";
+    ctx.fillRect(lx - 3, ly - 13, tm.width + 8, 18);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(label, lx, ly);
   }, []);
 
   const getCanvasCoords = (e: React.MouseEvent) => {
@@ -202,7 +233,14 @@ export default function PdfSigner({ file, onSign, signing }: PdfSignerProps) {
 
   const handleSign = () => {
     if (rectangle) {
-      onSign(rectangle, pageNum);
+      // Convert canvas pixels to PDF points (divide by render scale)
+      const pdfRect = {
+        x: rectangle.x / scale,
+        y: rectangle.y / scale,
+        width: rectangle.width / scale,
+        height: rectangle.height / scale,
+      };
+      onSign(pdfRect, pageNum);
     }
   };
 
