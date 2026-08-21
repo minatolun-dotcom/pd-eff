@@ -55,6 +55,7 @@ export default function PdfSigner({ file, onSign, signing }: PdfSignerProps) {
   // Offscreen canvas for cached PDF render (avoids re-render on every mouse move)
   const offscreenRef = useRef<HTMLCanvasElement | null>(null);
   const renderedPageRef = useRef<number>(-1);
+  const renderingRef = useRef<boolean>(false);
 
   // Load PDF (cached pdfjsLib import)
   useEffect(() => {
@@ -153,28 +154,34 @@ export default function PdfSigner({ file, onSign, signing }: PdfSignerProps) {
   // Render PDF page to offscreen canvas (cached, only re-renders on page/zoom change)
   const renderToOffscreen = useCallback(async () => {
     if (!pdf || !canvasRef.current) return;
-    const canvas = canvasRef.current;
-    const page = await pdf.getPage(pageNum);
-    const viewport = page.getViewport({ scale });
+    if (renderingRef.current) return; // prevent concurrent renders
+    renderingRef.current = true;
+    try {
+      const canvas = canvasRef.current;
+      const page = await pdf.getPage(pageNum);
+      const viewport = page.getViewport({ scale });
 
-    // Create or resize offscreen canvas
-    if (!offscreenRef.current) {
-      offscreenRef.current = document.createElement("canvas");
+      // Create or resize offscreen canvas
+      if (!offscreenRef.current) {
+        offscreenRef.current = document.createElement("canvas");
+      }
+      const off = offscreenRef.current;
+      off.width = viewport.width;
+      off.height = viewport.height;
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+
+      const offCtx = off.getContext("2d")!;
+      offCtx.clearRect(0, 0, off.width, off.height);
+      await page.render({ canvasContext: offCtx, viewport }).promise;
+      renderedPageRef.current = pageNum;
+
+      // Copy to visible canvas
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(off, 0, 0);
+    } finally {
+      renderingRef.current = false;
     }
-    const off = offscreenRef.current;
-    off.width = viewport.width;
-    off.height = viewport.height;
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-
-    const offCtx = off.getContext("2d")!;
-    offCtx.clearRect(0, 0, off.width, off.height);
-    await page.render({ canvasContext: offCtx, viewport }).promise;
-    renderedPageRef.current = pageNum;
-
-    // Copy to visible canvas
-    const ctx = canvas.getContext("2d")!;
-    ctx.drawImage(off, 0, 0);
   }, [pdf, pageNum, scale]);
 
   // Restore from offscreen cache + draw rectangle overlay (fast, no PDF re-render)
@@ -187,13 +194,18 @@ export default function PdfSigner({ file, onSign, signing }: PdfSignerProps) {
     if (rect) drawRectangle(ctx, rect);
   }, [drawRectangle]);
 
-  // Render page (uses offscreen cache for fast mouse move)
+  // Render page on PDF load, page change, or zoom change (NOT on rectangle change)
   useEffect(() => {
     if (!pdf || !canvasRef.current) return;
     renderToOffscreen().then(() => {
       if (rectangle) restoreAndDraw(rectangle);
     }).catch(err => console.error("Failed to render page:", err));
-  }, [pdf, pageNum, scale, rectangle, renderToOffscreen, restoreAndDraw]);
+  }, [pdf, pageNum, scale, renderToOffscreen, restoreAndDraw]);
+
+  // When rectangle changes (after draw complete), just restore from offscreen cache
+  useEffect(() => {
+    if (rectangle) restoreAndDraw(rectangle);
+  }, [rectangle, restoreAndDraw]);
 
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!isDrawing || !startPoint) return;
