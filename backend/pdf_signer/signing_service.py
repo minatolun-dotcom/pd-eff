@@ -412,52 +412,65 @@ def _draw_custom_stamp(
     location: str = "",
     page: int = 0,
 ) -> None:
-    """Draw a transparent signature stamp on the signed PDF content stream.
+    """Draw Acrobat-style transparent signature stamp.
     
-    This replaces PyHanko's white-box widget appearance with a clean,
-    transparent stamp showing only text and a green checkmark.
+    Clean black text on transparent background with a green checkmark.
+    No white box, no border — just like Adobe Acrobat.
     """
     try:
         import pikepdf
+        from datetime import datetime, timezone
         
         x1, y1, x2, y2 = box
         w = x2 - x1
         h = y2 - y1
         
-        # Build stamp text lines
-        lines = []
+        # Parse stamp_text for "Digitally signed by: <name>"
+        display_name = signer_name[:35]
         if stamp_text:
-            for line in stamp_text.split("\n")[:4]:
-                lines.append(line.strip()[:50])
-        else:
-            lines.append(f"Digitally signed by: {signer_name}")
+            for line in stamp_text.split("\n"):
+                line = line.strip()
+                if line.startswith("Digitally signed by:"):
+                    display_name = line.replace("Digitally signed by:", "").strip()[:35]
+                    break
+        
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        
+        # Acrobat-style layout:
+        # Line 1: "Digitally signed by" (bold, small)
+        # Line 2: signer name (bold, larger)
+        # Line 3: date + reason + location (small, gray)
+        # Right side: green checkmark
+        def esc(s):
+            return str(s).replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+        
+        detail_parts = [now]
         if reason:
-            lines.append(f"Reason: {reason[:40]}")
+            detail_parts.append(f"Reason: {reason[:25]}")
         if location:
-            lines.append(f"Location: {location[:40]}")
+            detail_parts.append(f"Location: {location[:25]}")
+        detail_line = " | ".join(detail_parts)[:70]
         
-        # PDF content stream commands — transparent background, black text
-        # Green checkmark on the right side
-        ck_x = w - 22
-        ck_y = h / 2 + 3
-        
-        text_ops = ""
-        y = h - 12
-        font_size = min(9, max(6, int(h / len(lines) / 2))) if lines else 8
-        for i, line in enumerate(lines):
-            escaped = line.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
-            text_ops += f"/F1 {font_size} Tf 1 0 0 1 4 {y} Tm ({escaped}) Tj\n"
-            y -= font_size + 3
+        # Green checkmark coordinates (right side)
+        ck_x = w - 25
+        ck_y = h / 2 + 2
         
         content = f"""q
 BT
+/F2 8 Tf
 0 0 0 rg
-{text_ops}ET
+1 0 0 1 4 {h - 14} Tm (Digitally signed by) Tj
+/F1 10 Tf
+1 0 0 1 4 {h - 28} Tm ({esc(display_name)}) Tj
+/F1 7 Tf
+0.4 0.4 0.4 rg
+1 0 0 1 4 {h - 42} Tm ({esc(detail_line)}) Tj
+ET
 0.13 0.55 0.13 RG
 0.13 0.55 0.13 rg
-1.5 w
-{ck_x} {ck_y} m {ck_x+4} {ck_y-6} l {ck_x+14} {ck_y+6} l S
-{ck_x+8} {ck_y-1} 7 0 360 arc S
+2 w
+{ck_x} {ck_y} m {ck_x+5} {ck_y-7} l {ck_x+16} {ck_y+7} l S
+{ck_x+9} {ck_y-1} 8 0 360 arc S
 Q"""
         
         pdf = pikepdf.open(pdf_path, allow_overwriting_input=True)
@@ -473,6 +486,12 @@ Q"""
                 "/Type": pikepdf.Name("/Font"),
                 "/Subtype": pikepdf.Name("/Type1"),
                 "/BaseFont": pikepdf.Name("/Helvetica"),
+            })
+        if "/F2" not in resources["/Font"]:
+            resources["/Font"]["/F2"] = pikepdf.Dictionary({
+                "/Type": pikepdf.Name("/Font"),
+                "/Subtype": pikepdf.Name("/Type1"),
+                "/BaseFont": pikepdf.Name("/Helvetica-Bold"),
             })
         page_obj["/Resources"] = resources
         
