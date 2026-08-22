@@ -12,11 +12,9 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from pyhanko.sign import signers, fields
-from pyhanko.sign.fields import SigFieldSpec
+from pyhanko.sign import signers
 from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
 from pyhanko.pdf_utils.reader import PdfFileReader
-from pyhanko import stamp
 from pyhanko.sign.signers import PdfSignatureMetadata, SimpleSigner
 
 import concurrent.futures
@@ -376,40 +374,6 @@ def decrypt_pdf(
     }
 
 
-def _remove_widget_appearances(pdf_path: str) -> None:
-    """Remove white-box widget annotation appearances from signed PDF.
-    
-    PyHanko always creates widget annotations with white backgrounds.
-    This removes the /AP entry so the white box disappears.
-    """
-    try:
-        import pikepdf
-        pdf = pikepdf.open(pdf_path, allow_overwriting_input=True)
-        
-        for page in pdf.pages:
-            annots = page.get("/Annots")
-            if not annots:
-                continue
-            for annot in annots:
-                # Annotations may be indirect references — resolve them
-                if isinstance(annot, pikepdf.Object) and hasattr(annot, 'resolve'):
-                    annot = annot.resolve()
-                if not isinstance(annot, pikepdf.Dictionary):
-                    continue
-                if annot.get("/Subtype") != "/Widget":
-                    continue
-                # Remove the appearance stream to eliminate white box
-                if "/AP" in annot:
-                    del annot["/AP"]
-                # Shrink the rect to zero so it's invisible
-                annot["/Rect"] = pikepdf.Array([0, 0, 0, 0])
-        
-        pdf.save(pdf_path)
-        pdf.close()
-    except Exception:
-        pass
-
-
 def _draw_stamp_before_sign(
     pdf_path: str,
     signer_name: str,
@@ -507,114 +471,6 @@ Q"""
     pdf.save(tmp.name)
     pdf.close()
     return tmp.name
-
-
-def _draw_custom_stamp(
-    signer_name: str,
-    box: tuple,
-    stamp_text: str = None,
-    reason: str = "",
-    location: str = "",
-    page: int = 0,
-) -> None:
-    """Draw Acrobat-style transparent signature stamp.
-    
-    Clean black text on transparent background with a green checkmark.
-    No white box, no border — just like Adobe Acrobat.
-    """
-    try:
-        import pikepdf
-        from datetime import datetime, timezone
-        
-        x1, y1, x2, y2 = box
-        w = x2 - x1
-        h = y2 - y1
-        
-        # Parse stamp_text for "Digitally signed by: <name>"
-        display_name = signer_name[:35]
-        if stamp_text:
-            for line in stamp_text.split("\n"):
-                line = line.strip()
-                if line.startswith("Digitally signed by:"):
-                    display_name = line.replace("Digitally signed by:", "").strip()[:35]
-                    break
-        
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-        
-        # Acrobat-style layout:
-        # Line 1: "Digitally signed by" (bold, small)
-        # Line 2: signer name (bold, larger)
-        # Line 3: date + reason + location (small, gray)
-        # Right side: green checkmark
-        def esc(s):
-            return str(s).replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
-        
-        detail_parts = [now]
-        if reason:
-            detail_parts.append(f"Reason: {reason[:25]}")
-        if location:
-            detail_parts.append(f"Location: {location[:25]}")
-        detail_line = " | ".join(detail_parts)[:70]
-        
-        # Green checkmark coordinates (right side)
-        ck_x = w - 25
-        ck_y = h / 2 + 2
-        
-        content = f"""q
-BT
-/F2 8 Tf
-0 0 0 rg
-1 0 0 1 4 {h - 14} Tm (Digitally signed by) Tj
-/F1 10 Tf
-1 0 0 1 4 {h - 28} Tm ({esc(display_name)}) Tj
-/F1 7 Tf
-0.4 0.4 0.4 rg
-1 0 0 1 4 {h - 42} Tm ({esc(detail_line)}) Tj
-ET
-0.13 0.55 0.13 RG
-0.13 0.55 0.13 rg
-2 w
-{ck_x} {ck_y} m {ck_x+5} {ck_y-7} l {ck_x+16} {ck_y+7} l S
-{ck_x+9} {ck_y-1} 8 0 360 arc S
-Q"""
-        
-        pdf = pikepdf.open(pdf_path, allow_overwriting_input=True)
-        target_page = min(page, len(pdf.pages) - 1)
-        page_obj = pdf.pages[target_page]
-        
-        # Ensure font exists
-        resources = page_obj.get("/Resources", pikepdf.Dictionary())
-        if "/Font" not in resources:
-            resources["/Font"] = pikepdf.Dictionary()
-        if "/F1" not in resources["/Font"]:
-            resources["/Font"]["/F1"] = pikepdf.Dictionary({
-                "/Type": pikepdf.Name("/Font"),
-                "/Subtype": pikepdf.Name("/Type1"),
-                "/BaseFont": pikepdf.Name("/Helvetica"),
-            })
-        if "/F2" not in resources["/Font"]:
-            resources["/Font"]["/F2"] = pikepdf.Dictionary({
-                "/Type": pikepdf.Name("/Font"),
-                "/Subtype": pikepdf.Name("/Type1"),
-                "/BaseFont": pikepdf.Name("/Helvetica-Bold"),
-            })
-        page_obj["/Resources"] = resources
-        
-        # Append to content stream
-        stamp_cmd = f"q 1 0 0 1 {x1} {y1} cm\n{content}\nQ"
-        existing = page_obj.get("/Contents")
-        if isinstance(existing, pikepdf.Array):
-            existing.append(pikepdf.Stream(pdf, stamp_cmd.encode("latin-1")))
-        elif isinstance(existing, pikepdf.Stream):
-            old_data = existing.read_bytes()
-            page_obj["/Contents"] = pikepdf.Stream(pdf, old_data + stamp_cmd.encode("latin-1"))
-        else:
-            page_obj["/Contents"] = pikepdf.Stream(pdf, stamp_cmd.encode("latin-1"))
-        
-        pdf.save(pdf_path)
-        pdf.close()
-    except Exception:
-        pass  # Don't fail signing if stamp drawing fails
 
 
 def _get_output_path(original_path: str) -> str:
