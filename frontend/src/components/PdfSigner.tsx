@@ -136,9 +136,14 @@ export default function PdfSigner({ file, onSign, signing }: PdfSignerProps) {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
+    // Scale from CSS display size to actual canvas pixel dimensions.
+    // Canvas may be larger than the container (e.g. 1455px tall in 600px container)
+    // so getBoundingClientRect() returns the visible portion, not the full size.
+    const scaleX = canvas.width / (canvas.offsetWidth || rect.width);
+    const scaleY = canvas.height / (canvas.offsetHeight || rect.height);
     return {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY,
     };
   };
 
