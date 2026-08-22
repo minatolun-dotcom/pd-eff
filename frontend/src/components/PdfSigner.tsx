@@ -56,6 +56,7 @@ export default function PdfSigner({ file, onSign, signing }: PdfSignerProps) {
   const offscreenRef = useRef<HTMLCanvasElement | null>(null);
   const renderedPageRef = useRef<number>(-1);
   const renderingRef = useRef<boolean>(false);
+  const renderScaleRef = useRef<number>(1); // actual scale used for canvas rendering
 
   // Load PDF (cached pdfjsLib import)
   useEffect(() => {
@@ -165,6 +166,7 @@ export default function PdfSigner({ file, onSign, signing }: PdfSignerProps) {
       const canvas = canvasRef.current;
       const page = await pdf.getPage(pageNum);
       const viewport = page.getViewport({ scale });
+      renderScaleRef.current = scale; // store the actual scale used for rendering
 
       // Create or resize offscreen canvas
       if (!offscreenRef.current) {
@@ -250,12 +252,17 @@ export default function PdfSigner({ file, onSign, signing }: PdfSignerProps) {
 
   const handleSign = () => {
     if (rectangle) {
-      // Convert canvas pixels to PDF points (divide by render scale)
+      // Convert canvas pixels to PDF points.
+      // Canvas origin is top-left (Y↓), PDF origin is bottom-left (Y↑).
+      // Use the render scale stored in ref (set during renderToOffscreen)
+      // to avoid stale scale state from async fitScale.
+      const rs = renderScaleRef.current || scale || 1;
+      const canvasH = canvasRef.current?.height || 1;
       const pdfRect = {
-        x: rectangle.x / scale,
-        y: rectangle.y / scale,
-        width: rectangle.width / scale,
-        height: rectangle.height / scale,
+        x: rectangle.x / rs,
+        y: (canvasH - rectangle.y - rectangle.height) / rs, // flip Y
+        width: rectangle.width / rs,
+        height: rectangle.height / rs,
       };
       onSign(pdfRect, pageNum);
     }
