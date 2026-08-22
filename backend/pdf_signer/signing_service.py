@@ -114,18 +114,26 @@ def sign_pdf(
     if signature_box is None:
         signature_box = (350, 20, 550, 80)
 
-    # Read PDF and sign
-    # Always sign INVISIBLE (no widget annotation) to avoid PyHanko's
-    # default white-box stamp. We draw our own transparent stamp after.
-    with open(pdf_path, "rb") as inf:
+    # Draw stamp BEFORE signing so the signature hash covers it.
+    # This avoids post-signing modifications that would break the signature.
+    pre_signed_path = pdf_path
+    if visible and signature_box:
+        pre_signed_path = _draw_stamp_before_sign(
+            pdf_path, signer_name or "Unknown", signature_box,
+            stamp_text, reason, location, page
+        )
+
+    # Sign the PDF (stamp already drawn, signature covers everything)
+    # Use stamp_style=None to avoid PyHanko's white-box widget appearance.
+    # NO SigFieldSpec — the widget annotation is the source of the white box.
+    # The signature is still cryptographically valid and verifiable.
+    with open(pre_signed_path, "rb") as inf:
         w = IncrementalPdfFileWriter(inf)
 
-        # Do NOT add SigFieldSpec — signs invisibly (no white box)
-        # Create the PdfSigner without stamp_style
         pdf_signer = signers.PdfSigner(
             sig_meta,
             signer=signer,
-            stamp_style=None,  # invisible signature — no widget appearance
+            stamp_style=None,  # no widget stamp — stamp is on content stream
         )
 
         with open(output_path, "wb") as outf:
@@ -133,14 +141,13 @@ def sign_pdf(
                 pdf_signer.sign_pdf(w, output=outf)
             _SIGN_POOL.submit(_do_sign).result()
 
-    # Now draw our own transparent stamp on the signed PDF using pikepdf
-    # and remove PyHanko's white-box widget annotation
-    if visible and signature_box:
-        _remove_widget_appearances(output_path)
-        _draw_custom_stamp(
-            output_path, signer_name or "Unknown", signature_box,
-            stamp_text, reason, location, page
-        )
+    # Clean up temp file if we created one
+    if pre_signed_path != pdf_path:
+        try:
+            import os
+            os.unlink(pre_signed_path)
+        except Exception:
+            pass
 
     return {
         "output_path": output_path,
@@ -403,8 +410,106 @@ def _remove_widget_appearances(pdf_path: str) -> None:
         pass
 
 
-def _draw_custom_stamp(
+def _draw_stamp_before_sign(
     pdf_path: str,
+    signer_name: str,
+    box: tuple,
+    stamp_text: str = None,
+    reason: str = "",
+    location: str = "",
+    page: int = 0,
+) -> str:
+    """Draw stamp on PDF BEFORE signing, so the signature hash covers it.
+    
+    Returns path to the pre-stamped PDF (temp file).
+    """
+    import pikepdf, tempfile
+    from datetime import datetime, timezone
+    
+    x1, y1, x2, y2 = box
+    w = x2 - x1
+    h = y2 - y1
+    
+    display_name = signer_name[:35]
+    if stamp_text:
+        for line in stamp_text.split("\n"):
+            line = line.strip()
+            if line.startswith("Digitally signed by:"):
+                display_name = line.replace("Digitally signed by:", "").strip()[:35]
+                break
+    
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    
+    def esc(s):
+        return str(s).replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+    
+    detail_parts = [now]
+    if reason:
+        detail_parts.append(f"Reason: {reason[:25]}")
+    if location:
+        detail_parts.append(f"Location: {location[:25]}")
+    detail_line = " | ".join(detail_parts)[:70]
+    
+    ck_x = w - 25
+    ck_y = h / 2 + 2
+    
+    content = f"""q
+BT
+/F2 8 Tf
+0 0 0 rg
+1 0 0 1 4 {h - 14} Tm (Digitally signed by) Tj
+/F1 10 Tf
+1 0 0 1 4 {h - 28} Tm ({esc(display_name)}) Tj
+/F1 7 Tf
+0.4 0.4 0.4 rg
+1 0 0 1 4 {h - 42} Tm ({esc(detail_line)}) Tj
+ET
+0.13 0.55 0.13 RG
+0.13 0.55 0.13 rg
+2 w
+{ck_x} {ck_y} m {ck_x+5} {ck_y-7} l {ck_x+16} {ck_y+7} l S
+{ck_x+9} {ck_y-1} 8 0 360 arc S
+Q"""
+    
+    stamp_cmd = f"q 1 0 0 1 {x1} {y1} cm\n{content}\nQ"
+    
+    pdf = pikepdf.open(pdf_path)
+    target_page = min(page, len(pdf.pages) - 1)
+    page_obj = pdf.pages[target_page]
+    
+    # Ensure fonts
+    resources = page_obj.get("/Resources", pikepdf.Dictionary())
+    if "/Font" not in resources:
+        resources["/Font"] = pikepdf.Dictionary()
+    fonts = resources["/Font"]
+    for name, base in [("/F1", "/Helvetica"), ("/F2", "/Helvetica-Bold")]:
+        if name not in fonts:
+            fonts[name] = pikepdf.Dictionary({
+                "/Type": pikepdf.Name("/Font"),
+                "/Subtype": pikepdf.Name("/Type1"),
+                "/BaseFont": pikepdf.Name(base),
+            })
+    page_obj["/Resources"] = resources
+    
+    # Append to content stream
+    existing = page_obj.get("/Contents")
+    if isinstance(existing, pikepdf.Array):
+        existing.append(pikepdf.Stream(pdf, stamp_cmd.encode("latin-1")))
+    elif isinstance(existing, pikepdf.Stream):
+        old_data = existing.read_bytes()
+        page_obj["/Contents"] = pikepdf.Stream(pdf, old_data + stamp_cmd.encode("latin-1"))
+    else:
+        page_obj["/Contents"] = pikepdf.Stream(pdf, stamp_cmd.encode("latin-1"))
+    
+    # Save to temp file
+    tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+    tmp.close()
+    pdf.save(tmp.name)
+    pdf.close()
+    return tmp.name
+
+
+def _draw_custom_stamp(
     signer_name: str,
     box: tuple,
     stamp_text: str = None,
