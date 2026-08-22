@@ -1144,6 +1144,10 @@ async def sign_pdf_with_pkcs11(
     key_label: str = Form(""),
     signer_name: str = Form(""),
     visible: bool = Form(True),
+    custom_x1: float = Form(None),
+    custom_y1: float = Form(None),
+    custom_x2: float = Form(None),
+    custom_y2: float = Form(None),
     db: Session = Depends(get_db),
 ):
     """Sign a PDF using a PKCS#11 hardware token."""
@@ -1163,6 +1167,11 @@ async def sign_pdf_with_pkcs11(
     with open(pdf_path, "wb") as f:
         f.write(content)
 
+    # Build signature box from custom coordinates
+    signature_box = None
+    if custom_x1 is not None and custom_y1 is not None and custom_x2 is not None and custom_y2 is not None:
+        signature_box = (custom_x1, custom_y1, custom_x2, custom_y2)
+
     # ── Test/mock mode: sign with generated self-signed cert ──────
     if module_path.lower() in ("test", "mock", "simulated"):
         from .cert_utils import generate_self_signed_cert
@@ -1177,6 +1186,8 @@ async def sign_pdf_with_pkcs11(
                 passphrase=test_cert["pfx_passphrase"],
                 signer_name=signer_name or "Test Signer (Simulated)",
                 visible=visible,
+                page=0,
+                signature_box=signature_box,
             )
         except Exception as e:
             raise HTTPException(500, f"Test signing failed: {str(e)}")
@@ -1192,6 +1203,7 @@ async def sign_pdf_with_pkcs11(
                 key_label=key_label or None,
                 signer_name=signer_name or "Hardware Token",
                 visible=visible,
+                signature_box=signature_box,
             )
         except FileNotFoundError as e:
             raise HTTPException(404, str(e))

@@ -235,40 +235,38 @@ def sign_pdf_with_pkcs11(
     if signature_box is None:
         signature_box = (350, 20, 550, 80)
 
-    # Read PDF and sign
-    from pyhanko.sign import signers as signers_mod, fields as sig_fields
-    from pyhanko.sign.fields import SigFieldSpec
-    from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
-    from pyhanko import stamp as stamp_mod
-
-    with open(pdf_path, "rb") as inf:
-        w = IncrementalPdfFileWriter(inf)
-
-        # Add signature field if visible
-        if visible:
-            sig_field_spec = SigFieldSpec(
-                sig_field_name=field_name,
-                on_page=page,
-                box=signature_box,
-            )
-            sig_fields.append_signature_field(w, sig_field_spec)
-
-        # Build stamp text
+    # Draw stamp BEFORE signing so signature hash covers it
+    pre_signed_path = pdf_path
+    if visible and signature_box:
+        from .signing_service import _draw_stamp_before_sign
         if stamp_text is None:
             stamp_text = f"Digitally signed by: {signer_name or 'Hardware Token'}"
+        pre_signed_path = _draw_stamp_before_sign(
+            pdf_path, signer_name or "Hardware Token", signature_box,
+            stamp_text, "", "", page
+        )
 
-        # Configure timestamp if URL provided
-        stamp_style = stamp_mod.TextStampStyle(
-            stamp_text=stamp_text,
-        ) if visible else None
+    # Sign the PDF (stamp already drawn, no post-modification)
+    from pyhanko.sign import signers as signers_mod
+    from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
 
+    with open(pre_signed_path, "rb") as inf:
+        w = IncrementalPdfFileWriter(inf)
+        pdf_signer = signers_mod.PdfSigner(
+            sig_meta,
+            signer=signer,
+            stamp_style=None,  # stamp on content stream, no widget stamp
+        )
         with open(output_path, "wb") as outf:
-            pdf_signer = signers_mod.PdfSigner(
-                sig_meta,
-                signer=signer,
-                stamp_style=stamp_style,
-            )
             pdf_signer.sign_pdf(w, output=outf)
+
+    # Clean up temp file
+    if pre_signed_path != pdf_path:
+        try:
+            import os
+            os.unlink(pre_signed_path)
+        except Exception:
+            pass
 
     return {
         "output_path": output_path,
