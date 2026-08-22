@@ -133,6 +133,9 @@ def sign_pdf(
 
         stamp_style = stamp.TextStampStyle(
             stamp_text=stamp_text,
+            background=None,  # no white box — transparent background
+            border_width=0,   # no border
+            background_opacity=0.0,
         ) if visible else None
 
         # Create the PdfSigner

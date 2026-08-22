@@ -257,41 +257,13 @@ def _replace_widgets(pdf, page_obj, signatures):
 
         time_str = _format_time(signing_time)
 
-        # Compact widget appearance — black text, no border, green check
-        ck_x2, ck_y2 = 8, h / 2 + 1
-        content = f"""q
-BT
-0 0 0 rg
-/F1 8 Tf
-1 0 0 1 2 {h-10} Tm ({safe(status_text)}) Tj
-/F1 6 Tf
-1 0 0 1 34 {h/2+2} Tm ({safe(signer_name[:20])}) Tj
-ET
-0.13 0.55 0.13 RG
-0.13 0.55 0.13 rg
-1.5 w
-{ck_x2} {ck_y2} m {ck_x2+3} {ck_y2-4} l {ck_x2+11} {ck_y2+4} l S
-{ck_x2+5.5} {ck_y2-0.5} 8 0 360 arc S
-Q"""
-
-        resources = pikepdf.Dictionary({
-            "/Font": pikepdf.Dictionary({
-                "/F1": pikepdf.Dictionary({
-                    "/Type": pikepdf.Name("/Font"),
-                    "/Subtype": pikepdf.Name("/Type1"),
-                    "/BaseFont": pikepdf.Name("/Helvetica"),
-                }),
-            })
-        })
-
-        stream = pikepdf.Stream(pdf, content.encode("latin-1"))
-        annot["/AP"]["/N"] = pikepdf.Dictionary({
-            "/Type": pikepdf.Name("/XObject"),
-            "/Subtype": pikepdf.Name("/Form"),
-            "/BBox": pikepdf.Array([0, 0, w, h]),
-            "/Resources": resources,
-            "/Stream": stream,
-        })
+        # Remove the widget's visual appearance entirely to eliminate
+        # the white box from PyHanko's default TextStampStyle.
+        # The verification stamp is drawn on the content stream instead.
+        try:
+            del annot["/AP"]
+        except Exception:
+            pass
 
 
 def _draw_stamps(pdf, page_obj, signatures, page_width, page_height, text_blocks, image_blocks, stamp_position=None):
